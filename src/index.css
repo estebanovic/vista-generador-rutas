@@ -1,0 +1,162 @@
+/* ─────────────────────────────────────────────────────────────
+   Calculadora de rutas — tema «Crepúsculo»
+   Tinta dorada sobre papel nocturno, con grano de película encima.
+
+   Sólo hay DOS familias de tono, y conviene que siga siendo así:
+     · fría  (251-256°) — papel, reglas y acento. Suelo y acento son parientes,
+       así que la interfaz no compite consigo misma.
+     · cálida (23-40°)  — ámbar y terra, que ya no son dos acentos rivales sino
+       tres intensidades del mismo oro. Es el único contraste deliberado.
+
+   Dos reglas que salieron de haberlo hecho mal antes:
+
+   1. Saturación pareja entre acentos (52-56%). Cuando uno se dispara se convierte
+      en el elemento más ruidoso de la pantalla y rompe la jerarquía.
+   2. El acento se reserva para «esto está activo» y «esta es tu ruta»: botón
+      principal, trazo, chips seleccionados, pin de origen, slider, foco y curva
+      de elevación. Lo auxiliar va a --ink-mute y los gráficos a la escalera
+      cálida. Si el acento reaparece en todas partes, deja de ser acento.
+
+   Todo color sale de estas variables.
+   ───────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;0,6..96,600;1,6..96,400;1,6..96,500&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'leaflet/dist/leaflet.css';
+
+:root {
+  /* — familia fría: papel, reglas y acento — */
+  --paper: #1f1b2e;
+  --paper-2: #272236;
+  --paper-3: #322b45;
+  --rule: #3f3959;
+  --rule-soft: #332e49;
+  --accent: #9689d1;
+  --accent-deep: #877ac2;
+
+  /* — tinta: crema cálida sobre el papel frío — */
+  --ink: #f0e6c8;
+  --ink-soft: #cfc4a0;
+  --ink-mute: #948c78;
+
+  /* — familia cálida: un oro en tres intensidades —
+     amber marca (hitos, trazo discontinuo), amber-deep rotula (KM, epígrafes)
+     y terra señala el destino y los errores. */
+  --amber: #d9bd85;
+  --amber-deep: #a8823f;
+  --terra: #c9743f;
+
+  /* Sombras y velos: negro violáceo, del mismo tono que el papel. */
+  --shadow-sm: 0 2px 10px rgba(9, 6, 18, 0.45);
+  --shadow-md: 0 6px 24px rgba(9, 6, 18, 0.55);
+  --shadow-lg: 0 12px 40px rgba(6, 4, 14, 0.7);
+
+  --serif-display: 'Cormorant Garamond', Georgia, serif;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.serif { font-family: var(--serif-display); }
+.mono  { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+input, select, button, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus, [role="button"]:focus, input:focus, select:focus { outline: none; }
+button:focus-visible, input:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 2px; }
+
+/* ── Leaflet ─────────────────────────────────────────────── */
+.leaflet-container {
+  background: var(--paper-3);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.leaflet-tile {
+  filter: saturate(0.55) brightness(0.78) contrast(1.05) hue-rotate(195deg);
+}
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--paper) 85%, transparent) !important;
+  color: var(--ink-mute) !important;
+  font-size: 10px !important;
+  font-family: 'Inter', sans-serif !important;
+  border: 1px solid var(--rule-soft);
+  border-right: none;
+  border-bottom: none;
+}
+.leaflet-control-attribution a { color: var(--ink-mute) !important; }
+.leaflet-control-zoom { display: none !important; }
+
+.leaflet-tooltip.meridiano-tip {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow-sm);
+  border-radius: 2px;
+  padding: 6px 10px;
+  color: var(--ink);
+}
+.leaflet-tooltip-top.meridiano-tip::before { border-top-color: var(--rule); }
+
+/* ── Scrollbar fina ──────────────────────────────────────── */
+.scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+.scroll::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+.scroll { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+
+/* ── Slider ────────────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 22px; background: transparent; margin: 0;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px; background: var(--rule); border-radius: 1px;
+}
+input[type="range"]::-moz-range-track {
+  height: 2px; background: var(--rule); border-radius: 1px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--paper); border: 1.5px solid var(--accent);
+  margin-top: -6px; box-shadow: 0 1px 2px rgba(9, 6, 18, 0.5);
+  transition: transform .15s;
+}
+input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--paper); border: 1.5px solid var(--accent);
+  box-shadow: 0 1px 2px rgba(9, 6, 18, 0.5);
+}
+
+/* ── Animaciones ─────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp .4s ease-out both; }
+
+@keyframes slideInR {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes dashflow { to { stroke-dashoffset: -24; } }
+.route-flow { animation: dashflow 1.6s linear infinite; }
+
+/* ── Grano de película ───────────────────────────────────── */
+/* Capa única sobre toda la app: sidebar, mapa, paneles y bitácora quedan
+   bajo la misma textura, como en la maqueta de presentación. */
+.grain-overlay {
+  position: fixed; inset: 0; pointer-events: none; z-index: 10000;
+  opacity: 0.16; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='2' seed='9'/><feColorMatrix values='0 0 0 0 0.55  0 0 0 0 0.56  0 0 0 0 0.50  0 0 0 0.85 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
