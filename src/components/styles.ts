@@ -4,7 +4,7 @@
  *
  * Tres familias, tres trabajos:
  *   serif → display y cifras        sans (Inter) → controles y etiquetas
- *   mono  → datos (km, cotas, %, coordenadas)
+ *   mono  → datos (km, %, coordenadas)
  *
  * La **cursiva** está reservada a dos cosas y a ninguna más: la voz del
  * cartógrafo (`aside`) y los nombres propios de tramos e hitos (`value`,
@@ -105,7 +105,7 @@ export const text = {
     lineHeight: 1.4,
     color: 'var(--ink-mute)',
   },
-  /** Dato numérico: km, cotas, porcentajes, coordenadas, fechas. */
+  /** Dato numérico: km, porcentajes, coordenadas, fechas. */
   data: {
     fontFamily: FONT.mono,
     fontSize: SIZE.xs,

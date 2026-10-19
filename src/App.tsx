@@ -4,7 +4,6 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import { calculateRoute, importBbox } from './api/client';
-import { fetchElevations, sampleIndices } from './api/elevation';
 import { reverseGeocode } from './api/geocode';
 import { MapView, type MapLayer } from './components/MapView';
 import { ResultsPanel } from './components/ResultsPanel';
@@ -29,8 +28,6 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [route, setRoute] = useState<RouteView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [focus, setFocus] = useState<number | null>(null);
-  const [loadingMsg, setLoadingMsg] = useState('Consultando cartografía');
 
   const [layer, setLayer] = useState<MapLayer>('map');
   const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; nonce: number } | null>(null);
@@ -47,10 +44,7 @@ export default function App() {
   /** Cualquier cambio de parámetro invalida el trazado ya dibujado. */
   const update = (next: PlannerState) => {
     setState(next);
-    if (phase === 'ready') {
-      setPhase('idle');
-      setFocus(null);
-    }
+    if (phase === 'ready') setPhase('idle');
   };
 
   const onMapClick = useCallback(async (lat: number, lon: number) => {
@@ -90,18 +84,10 @@ export default function App() {
   const compute = async () => {
     setPhase('computing');
     setError(null);
-    setFocus(null);
-    setLoadingMsg('Consultando cartografía');
 
     try {
       const result = await calculateRoute(toRequestBody(state));
-
-      setLoadingMsg('Levantando el perfil de cotas');
-      const idxs = sampleIndices(result.coordinates.length);
-      const eles = await fetchElevations(idxs.map((i) => result.coordinates[i]));
-      const samples = eles ? idxs.map((idx, k) => ({ idx, ele: eles[k] })) : null;
-
-      setRoute(buildRouteView(result, state, samples));
+      setRoute(buildRouteView(result, state));
       setHasGraph(true);
       setPhase('ready');
     } catch (e) {
@@ -141,7 +127,6 @@ export default function App() {
           route={showRoute}
           origin={state.origin}
           destination={state.destination}
-          focusIdx={focus != null ? (showRoute?.profile[focus]?.idx ?? null) : null}
           layer={layer}
           importedBbox={importedBbox}
           onMapClick={onMapClick}
@@ -154,14 +139,12 @@ export default function App() {
         <SearchBox onPick={(lat, lon) => setFlyTo({ lat, lon, nonce: Date.now() })} />
         <LayerSwitch value={layer} onChange={setLayer} />
 
-        {phase === 'computing' && <LoadingOverlay message={loadingMsg} />}
+        {phase === 'computing' && <LoadingOverlay message="Consultando cartografía" />}
 
         {showRoute && (
           <ResultsPanel
             route={showRoute}
             state={state}
-            focus={focus}
-            setFocus={setFocus}
             onExportGpx={exportGpx}
           />
         )}

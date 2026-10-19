@@ -49,7 +49,6 @@ export interface MapViewProps {
   origin: Waypoint;
   destination: Waypoint;
   layer: MapLayer;
-  focusIdx: number | null;
   importedBbox: Bbox | null;
   onMapClick: (lat: number, lon: number) => void;
   onBoundsRef: (getBounds: () => Bbox) => void;
@@ -61,7 +60,6 @@ export function MapView({
   origin,
   destination,
   layer,
-  focusIdx,
   importedBbox,
   onMapClick,
   onBoundsRef,
@@ -72,7 +70,6 @@ export function MapView({
   const tileRef = useRef<L.TileLayer | null>(null);
   const routeRef = useRef<L.LayerGroup | null>(null);
   const endpointsRef = useRef<L.LayerGroup | null>(null);
-  const focusRef = useRef<L.Marker | null>(null);
   const bboxRef = useRef<L.Rectangle | null>(null);
   // El handler de click se guarda en un ref: el listener de Leaflet se registra
   // una sola vez y no debe capturar una versión vieja del callback.
@@ -172,50 +169,9 @@ export function MapView({
       className: 'route-flow',
     });
 
-    const hitos = route.highlights.map((h) => {
-      const pt = route.pts[h.idx];
-      const mk = L.marker(pt, {
-        icon: L.divIcon({
-          className: '',
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
-          html: `<div style="width:8px;height:8px;margin:4px;background:${token('--amber')};
-                   border:1.5px solid ${token('--ink')};border-radius:50%;
-                   box-shadow:0 0 0 3px ${token('--paper')}"></div>`,
-        }),
-      });
-      mk.bindTooltip(
-        `<div style="font-family:${FONT.serif};font-size:${SIZE.md}px;font-style:italic">${h.name}</div>
-         <div style="font-family:${FONT.mono};font-size:${SIZE.xs}px;color:var(--ink-mute);letter-spacing:.06em">
-           KM ${h.km.toFixed(1)} · ${h.ele} M</div>`,
-        { direction: 'top', offset: [0, -6], opacity: 1, className: 'meridiano-tip' },
-      );
-      return mk;
-    });
-
-    routeRef.current = L.layerGroup([halo, main, accent, ...hitos]).addTo(m);
+    routeRef.current = L.layerGroup([halo, main, accent]).addTo(m);
     m.fitBounds(main.getBounds(), { padding: [70, 70] });
   }, [route]);
-
-  // ── punto enfocado desde el perfil altimétrico ──
-  useEffect(() => {
-    const m = mapRef.current;
-    if (!m) return;
-    focusRef.current?.remove();
-    focusRef.current = null;
-    if (focusIdx == null || !route?.pts[focusIdx]) return;
-    focusRef.current = L.marker(route.pts[focusIdx], {
-      interactive: false,
-      icon: L.divIcon({
-        className: '',
-        iconSize: [22, 22],
-        iconAnchor: [11, 11],
-        html: `<div style="width:22px;height:22px;border-radius:50%;
-                 border:1.5px solid ${token('--ink')};background:${token('--amber')};
-                 box-shadow:0 0 0 4px ${token('--paper')}"></div>`,
-      }),
-    }).addTo(m);
-  }, [focusIdx, route]);
 
   // ── rectángulo de la zona importada ──
   useEffect(() => {

@@ -13,8 +13,8 @@
    1. Saturación pareja entre acentos (52-56%). Cuando uno se dispara se convierte
       en el elemento más ruidoso de la pantalla y rompe la jerarquía.
    2. El acento se reserva para «esto está activo» y «esta es tu ruta»: botón
-      principal, trazo, chips seleccionados, pin de origen, slider, foco y curva
-      de elevación. Lo auxiliar va a --ink-mute y los gráficos a la escalera
+      principal, trazo, chips seleccionados, pin de origen, slider y foco. Lo
+      auxiliar va a --ink-mute y los gráficos a la escalera
       cálida. Si el acento reaparece en todas partes, deja de ser acento.
 
    Todo color sale de estas variables.

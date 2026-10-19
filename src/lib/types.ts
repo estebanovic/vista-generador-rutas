@@ -110,7 +110,7 @@ export type Mode = 'directa' | 'circuito' | 'destino-largo';
 export interface PlannerState {
   origin: Waypoint;
   destination: Waypoint;
-  /** Perfil base resaltado; también fija velocidad y consumo estimados. */
+  /** Perfil base resaltado. */
   profile: ProfileName;
   /** true cuando se tocó un control específico: se envía `custom` + pesos. */
   custom: boolean;
@@ -121,28 +121,13 @@ export interface PlannerState {
   targetLengthKm: number;
 }
 
-/** Punto del perfil altimétrico: índice dentro de `pts`, km acumulados y cota. */
-export interface ProfilePoint { idx: number; km: number; ele: number }
-
-export interface Highlight { name: string; idx: number; km: number; ele: number }
-
 /** Ruta ya derivada y lista para pintar. */
 export interface RouteView {
   pts: [number, number][];
-  /** Km acumulados por punto de `pts`. */
-  cumKm: number[];
   totalKm: number;
-  /** El backend ya no devuelve desnivel: siempre `null`. */
-  ascent: number | null;
-  descent: number | null;
   curviness: number;
-  hours: number;
-  avgSpeed: number;
   highwayBreakdown: Record<string, number>;
   surfaceBreakdown: Record<string, number>;
-  /** Vacío si no se pudo consultar la elevación. */
-  profile: ProfilePoint[];
-  highlights: Highlight[];
   origin: Waypoint;
   destination: Waypoint;
 }
