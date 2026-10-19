@@ -109,6 +109,7 @@ export type Mode = 'directa' | 'circuito' | 'destino-largo';
 
 export interface PlannerState {
   origin: Waypoint;
+  /** Se conserva en el circuito aunque no se envíe. */
   destination: Waypoint;
   /** Perfil base resaltado. */
   profile: ProfileName;
@@ -117,19 +118,32 @@ export interface PlannerState {
   /** Fuente de verdad de los dos pesos del costo. */
   weights: RouteWeights;
   mode: Mode;
-  /** Solo en `circuito` y `destino-largo`. */
-  targetLengthKm: number;
+  /** Texto del campo de largo objetivo (km), tal como se escribe; se valida antes de enviar. */
+  targetLengthKm: string;
+  /** Desvío máximo de la ruta directa; `null` = el del perfil. */
+  maxDetourRatio: number | null;
 }
+
+/** Recorrido entregado: la ruta directa o la `modalidad` de `targetLength`. */
+export type RouteKind = 'directa' | TargetModalidad;
 
 /** Ruta ya derivada y lista para pintar. */
 export interface RouteView {
+  kind: RouteKind;
+  /** Parámetros con los que se pidió: el panel describe esta ruta, no los controles actuales. */
+  state: PlannerState;
+  /** Cuerpo enviado al backend. */
+  request: CalculateRouteBody;
   pts: [number, number][];
-  totalKm: number;
-  curviness: number;
-  highwayBreakdown: Record<string, number>;
-  surfaceBreakdown: Record<string, number>;
-  origin: Waypoint;
-  destination: Waypoint;
+  /**
+   * Circuito con acceso repetido: `pts[0..outEnd]` es la ida desde el origen y
+   * `pts[backStart..]` la vuelta. `null` si no hay acceso.
+   */
+  access: { outEnd: number; backStart: number } | null;
+  stats: RouteStats;
+  snap: RouteResult['snap'];
+  detour?: DetourInfo;
+  targetLength?: TargetLengthInfo;
 }
 
 export type Phase = 'idle' | 'computing' | 'ready';

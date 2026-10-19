@@ -1,6 +1,7 @@
 /** Mapa Leaflet con teselas en sepia, trazado de la ruta y controles propios. */
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import { isLoop } from '../lib/planner';
 import type { Bbox, RouteView, Waypoint } from '../lib/types';
 import { token } from '../lib/theme';
 import { IconLocate, IconMinus, IconPlus } from './icons';
@@ -26,6 +27,33 @@ const TILE_LAYERS: Record<MapLayer, { url: string; attribution: string; maxZoom:
   },
 };
 
+/** Ajustes al mapa menores que esto no se dibujan: la línea no se vería. */
+const SNAP_LINE_MIN_M = 20;
+
+/**
+ * Encuadra unos límites dejando libres el buscador (arriba a la izquierda) y el
+ * panel de resultados (abajo), que flotan sobre el mapa.
+ */
+function fitVisible(m: L.Map, bounds: L.LatLngBounds) {
+  const panel = document.querySelector('[data-results-panel]')?.getBoundingClientRect().height ?? 0;
+  const bottom = Math.min(panel + 40, m.getSize().y * 0.6);
+  m.fitBounds(bounds, { paddingTopLeft: [60, 110], paddingBottomRight: [80, Math.max(bottom, 60)] });
+}
+
+const TIP: L.TooltipOptions = { direction: 'top', offset: [0, -30], opacity: 1, className: 'meridiano-tip' };
+
+/** Rombo del punto de giro de la ida y vuelta. */
+function turnIcon() {
+  return L.divIcon({
+    className: '',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    html: `<div style="width:12px;height:12px;margin:4px;transform:rotate(45deg);
+             background:${token('--amber')};border:1.5px solid ${token('--ink')};
+             box-shadow:0 0 0 3px ${token('--paper')}"></div>`,
+  });
+}
+
 /** Chincheta de papel con la letra del extremo. */
 function pinIcon(color: string, label: string) {
   return L.divIcon({
@@ -48,9 +76,12 @@ export interface MapViewProps {
   route: RouteView | null;
   origin: Waypoint;
   destination: Waypoint;
+  /** En el circuito no hay destino: un solo marcador. */
+  showDestination: boolean;
   layer: MapLayer;
   importedBbox: Bbox | null;
   onMapClick: (lat: number, lon: number) => void;
+  onMarkerDrag: (target: 'origin' | 'destination', lat: number, lon: number) => void;
   onBoundsRef: (getBounds: () => Bbox) => void;
   flyTo: { lat: number; lon: number; nonce: number } | null;
 }
@@ -59,9 +90,11 @@ export function MapView({
   route,
   origin,
   destination,
+  showDestination,
   layer,
   importedBbox,
   onMapClick,
+  onMarkerDrag,
   onBoundsRef,
   flyTo,
 }: MapViewProps) {
@@ -74,9 +107,11 @@ export function MapView({
   // El handler de click se guarda en un ref: el listener de Leaflet se registra
   // una sola vez y no debe capturar una versión vieja del callback.
   const clickRef = useRef(onMapClick);
+  const dragRef = useRef(onMarkerDrag);
   useEffect(() => {
     clickRef.current = onMapClick;
-  }, [onMapClick]);
+    dragRef.current = onMarkerDrag;
+  }, [onMapClick, onMarkerDrag]);
 
   const [scale, setScale] = useState({ label: '—', width: 60 });
 
@@ -133,11 +168,24 @@ export function MapView({
     const m = mapRef.current;
     if (!m) return;
     endpointsRef.current?.remove();
-    endpointsRef.current = L.layerGroup([
-      L.marker([origin.lat, origin.lon], { icon: pinIcon(token('--accent'), 'A') }),
-      L.marker([destination.lat, destination.lon], { icon: pinIcon(token('--terra'), 'B') }),
-    ]).addTo(m);
-  }, [origin, destination]);
+    const pin = (target: 'origin' | 'destination', w: Waypoint, color: string, label: string, tip: string) => {
+      const mk = L.marker([w.lat, w.lon], { icon: pinIcon(color, label), draggable: true });
+      mk.bindTooltip(tip, TIP);
+      mk.on('dragend', () => {
+        const p = mk.getLatLng();
+        dragRef.current(target, p.lat, p.lng);
+      });
+      return mk;
+    };
+    endpointsRef.current = L.layerGroup(
+      showDestination
+        ? [
+            pin('origin', origin, token('--accent'), 'A', 'Partida'),
+            pin('destination', destination, token('--terra'), 'B', 'Destino'),
+          ]
+        : [pin('origin', origin, token('--accent'), 'A', 'Partida y llegada')],
+    ).addTo(m);
+  }, [origin, destination, showDestination]);
 
   // ── trazado ──
   useEffect(() => {
@@ -147,30 +195,70 @@ export function MapView({
     routeRef.current = null;
     if (!route || route.pts.length < 2) return;
 
-    const halo = L.polyline(route.pts, {
-      color: token('--paper'),
-      weight: 8,
-      opacity: 0.85,
-      lineCap: 'round',
-      lineJoin: 'round',
-    });
-    const main = L.polyline(route.pts, {
-      color: token('--accent'),
-      weight: 3.5,
-      lineCap: 'round',
-      lineJoin: 'round',
-    });
-    const accent = L.polyline(route.pts, {
-      color: token('--amber'),
-      weight: 1.5,
-      opacity: 0.95,
-      dashArray: '1, 8',
-      lineCap: 'round',
-      className: 'route-flow',
-    });
+    const { pts, access } = route;
+    const line = (latlngs: [number, number][], color = token('--accent')) =>
+      L.polyline(latlngs, { color, weight: 3.5, lineCap: 'round', lineJoin: 'round' });
 
-    routeRef.current = L.layerGroup([halo, main, accent]).addTo(m);
-    m.fitBounds(main.getBounds(), { padding: [70, 70] });
+    const layers: L.Layer[] = [
+      L.polyline(pts, {
+        color: token('--paper'),
+        weight: 8,
+        opacity: 0.85,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }),
+    ];
+    // El acceso del circuito se recorre de ida y de vuelta: va en dorado.
+    if (access) {
+      layers.push(
+        line(pts.slice(access.outEnd, access.backStart + 1)),
+        line(pts.slice(0, access.outEnd + 1), token('--amber')),
+        line(pts.slice(access.backStart), token('--amber')),
+      );
+    } else {
+      layers.push(line(pts));
+    }
+    layers.push(
+      L.polyline(pts, {
+        color: token('--amber'),
+        weight: 1.5,
+        opacity: 0.95,
+        dashArray: '1, 8',
+        lineCap: 'round',
+        className: 'route-flow',
+      }),
+    );
+
+    // Del punto pedido al punto de la vía donde empieza o termina la ruta.
+    const snapLine = (from: { lat: number; lon: number }, to: { lat: number; lon: number; distanceMeters: number }) => {
+      if (!(to.distanceMeters >= SNAP_LINE_MIN_M) || !Number.isFinite(to.lat)) return;
+      layers.push(
+        L.polyline(
+          [
+            [from.lat, from.lon],
+            [to.lat, to.lon],
+          ],
+          { color: token('--ink'), weight: 2, dashArray: '3 5', interactive: false },
+        ),
+      );
+    };
+    snapLine(route.request.origin, route.snap.origin);
+    if (!isLoop(route.kind) && route.request.destination) {
+      snapLine(route.request.destination, route.snap.destination);
+    }
+
+    const turn = route.targetLength?.turnaround;
+    if (route.kind === 'ida-y-vuelta' && turn) {
+      layers.push(
+        L.marker([turn.lat, turn.lon], { icon: turnIcon(), keyboard: false }).bindTooltip(
+          'Punto de giro: aquí la ruta da la vuelta',
+          { ...TIP, offset: [0, -10] },
+        ),
+      );
+    }
+
+    routeRef.current = L.layerGroup(layers).addTo(m);
+    fitVisible(m, L.polyline(pts).getBounds());
   }, [route]);
 
   // ── rectángulo de la zona importada ──
@@ -291,7 +379,7 @@ export function MapView({
           title="Encuadrar la ruta"
           onClick={() => {
             if (route && route.pts.length > 1) {
-              mapRef.current?.fitBounds(L.polyline(route.pts).getBounds(), { padding: [70, 70] });
+              if (mapRef.current) fitVisible(mapRef.current, L.polyline(route.pts).getBounds());
             } else {
               mapRef.current?.setView([origin.lat, origin.lon], 13);
             }

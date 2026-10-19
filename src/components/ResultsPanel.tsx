@@ -1,15 +1,35 @@
 /**
- * Bitácora de la ruta — panel único anclado abajo. Plegado muestra las cifras;
- * desplegado añade la composición de la vía y la superficie.
+ * Bitácora de la ruta — panel único anclado abajo. Arriba los avisos, luego
+ * las cifras y, desplegado, el reparto por tipo de vía y superficie.
  */
 import { useState, type ReactNode } from 'react';
-import { HIGHWAY_LABELS, PROFILE_LABELS, SURFACE_LABELS } from '../lib/planner';
-import type { PlannerState, RouteView } from '../lib/types';
-import { IconChevronDown, IconDownload, IconPrint } from './icons';
+import { adaptNotice } from '../lib/messages';
+import {
+  fmtKm,
+  fmtPct,
+  HIGHWAY_LABELS,
+  inferredSurfaceShare,
+  isLoop,
+  KIND_LABELS,
+  PROFILE_LABELS,
+  routeTitle,
+  shares,
+  SURFACE_LABELS,
+  surfaceSummary,
+  TARGET_TOLERANCE,
+} from '../lib/planner';
+import type { RouteView } from '../lib/types';
+import { IconChevronDown, IconDownload } from './icons';
 import { BreakdownBar } from './primitives';
 import { text } from './styles';
 
-/** Ordenados de vía rápida a pista, para que las barras lean como una escala. */
+/** Ajustes al mapa desde los que se avisa: el punto pedido queda lejos de la ruta. */
+const SNAP_WARN_M = 200;
+
+/** Barras visibles por reparto; el resto se agrupa en «Otras». */
+const MAX_BARS = 5;
+
+/** Ordenados de vía rápida a pista, para colorear las barras como una escala. */
 const HIGHWAY_ORDER = [
   'motorway',
   'trunk',
@@ -18,34 +38,105 @@ const HIGHWAY_ORDER = [
   'tertiary',
   'unclassified',
   'residential',
+  'living_street',
   'service',
   'track',
   'path',
 ];
+const PAVED = new Set(['asphalt', 'concrete', 'cobblestone']);
 
-function shareOfTotal(breakdown: Record<string, number>): [string, number][] {
-  const total = Object.values(breakdown).reduce((a, b) => a + b, 0);
-  if (total <= 0) return [];
-  return Object.entries(breakdown)
-    .map(([k, m]) => [k, (m / total) * 100] as [string, number])
-    .sort((a, b) => b[1] - a[1]);
+interface Notice {
+  tone: 'info' | 'warn';
+  title: string;
+  body: string[];
+}
+
+function buildNotices(route: RouteView): Notice[] {
+  const out: Notice[] = [];
+  const tl = route.targetLength;
+
+  if (route.kind === 'ida-y-vuelta' && tl) {
+    out.push({
+      tone: 'warn',
+      title: tl.circuitImpossible
+        ? 'No hay un circuito posible desde este punto'
+        : 'No se encontró un circuito',
+      body: [
+        'En su lugar se propone una ida y vuelta: la ruta llega hasta el punto de giro (◆ en el mapa) y regresa por el mismo camino.',
+        ...(tl.message ? [adaptNotice(tl.message)] : []),
+        tl.circuitImpossible
+          ? 'Puedes probar con otro largo o con otro punto de partida.'
+          : 'Podría existir uno que la búsqueda no alcanzó a encontrar: prueba con otro largo o con otro punto de partida.',
+      ],
+    });
+  }
+  if (route.kind === 'ruta' && tl && !tl.withinBand) {
+    out.push({
+      tone: 'warn',
+      title: 'El largo quedó fuera del margen pedido',
+      body: tl.message ? [adaptNotice(tl.message)] : [],
+    });
+  }
+  if (route.kind === 'circuito' && tl && tl.accessRepeatedMeters > 0) {
+    out.push({
+      tone: 'info',
+      title: 'Tramo de acceso de ida y vuelta',
+      body: [
+        `Los primeros ${fmtKm(tl.accessRepeatedMeters / 2)} llevan hasta las calles donde se cierra el circuito y se recorren de ida y de vuelta (en dorado en el mapa).`,
+      ],
+    });
+  }
+
+  const { origin, destination } = route.snap;
+  if (origin.distanceMeters > SNAP_WARN_M) {
+    out.push({
+      tone: 'warn',
+      title: 'El punto de partida está lejos de la vía',
+      body: [
+        `Está a ${Math.round(origin.distanceMeters)} m de la vía más cercana: la ruta empieza en esa vía (línea punteada en el mapa).`,
+      ],
+    });
+  }
+  if (!isLoop(route.kind) && destination.distanceMeters > SNAP_WARN_M) {
+    out.push({
+      tone: 'warn',
+      title: 'El destino está lejos de la vía',
+      body: [
+        `Está a ${Math.round(destination.distanceMeters)} m de la vía más cercana: la ruta termina en esa vía (línea punteada en el mapa).`,
+      ],
+    });
+  }
+  return out;
+}
+
+/** Las `MAX_BARS` claves principales y el resto sumado como «Otras». */
+function topShares(breakdown: Record<string, number>): [string, number][] {
+  const all = shares(breakdown);
+  if (all.length <= MAX_BARS) return all;
+  const rest = all.slice(MAX_BARS - 1).reduce((a, [, f]) => a + f, 0);
+  return [...all.slice(0, MAX_BARS - 1), ['otras', rest]];
 }
 
 export interface ResultsPanelProps {
   route: RouteView;
-  state: PlannerState;
   onExportGpx: () => void;
 }
 
-export function ResultsPanel({ route, state, onExportGpx }: ResultsPanelProps) {
-  const [expanded, setExpanded] = useState(false);
+export function ResultsPanel({ route, onExportGpx }: ResultsPanelProps) {
+  const [expanded, setExpanded] = useState(true);
+  const { stats, detour, targetLength: tl, state } = route;
 
-  const highways = shareOfTotal(route.highwayBreakdown).slice(0, 5);
-  const surfaces = shareOfTotal(route.surfaceBreakdown).slice(0, 4);
+  const notices = buildNotices(route);
+  const highways = topShares(stats.highwayBreakdown);
+  const surfaces = topShares(stats.surfaceBreakdown);
+  const { unpaved } = surfaceSummary(stats.surfaceBreakdown);
+  const inferred = inferredSurfaceShare(stats.surfaceSourceBreakdown);
+  const profileLabel = state.custom ? 'Perfil personalizado' : `Perfil ${PROFILE_LABELS[state.profile]}`;
 
   return (
     <div
       className="fade-up"
+      data-results-panel
       style={{
         position: 'absolute',
         left: 20,
@@ -74,7 +165,7 @@ export function ResultsPanel({ route, state, onExportGpx }: ResultsPanelProps) {
         }}
       >
         <span style={{ ...text.eyebrow, color: 'var(--amber-deep)', flexShrink: 0 }}>
-          Bitácora · Ruta
+          {KIND_LABELS[route.kind]}
         </span>
         <span
           style={{
@@ -85,23 +176,14 @@ export function ResultsPanel({ route, state, onExportGpx }: ResultsPanelProps) {
             whiteSpace: 'nowrap',
           }}
         >
-          {route.origin.name} <span style={{ color: 'var(--amber-deep)' }}>—</span>{' '}
-          {route.destination.name}
+          {routeTitle(route)}
         </span>
         <span
-          style={{
-            ...text.data,
-            marginLeft: 'auto',
-            color: 'var(--ink-mute)',
-            flexShrink: 0,
-          }}
+          style={{ ...text.data, marginLeft: 'auto', color: 'var(--ink-mute)', flexShrink: 0 }}
         >
-          {new Date()
-            .toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })
-            .toUpperCase()}
+          {profileLabel.toUpperCase()}
         </span>
         <GhostButton icon={IconDownload} label="GPX" onClick={onExportGpx} />
-        <GhostButton icon={IconPrint} label="Imprimir" onClick={() => window.print()} />
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -112,9 +194,9 @@ export function ResultsPanel({ route, state, onExportGpx }: ResultsPanelProps) {
             alignItems: 'center',
             gap: 6,
             padding: '5px 10px',
-            background: expanded ? 'var(--ink)' : 'transparent',
-            color: expanded ? 'var(--paper)' : 'var(--ink-soft)',
-            border: `1px solid ${expanded ? 'var(--ink)' : 'var(--rule)'}`,
+            background: 'transparent',
+            color: 'var(--ink-soft)',
+            border: '1px solid var(--rule)',
             borderRadius: 2,
             flexShrink: 0,
           }}
@@ -132,74 +214,149 @@ export function ResultsPanel({ route, state, onExportGpx }: ResultsPanelProps) {
         </button>
       </div>
 
-      {/* — cifras — */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-          gap: 8,
-          padding: '14px 20px 16px',
-          background: 'var(--paper-2)',
-          flexShrink: 0,
-        }}
-      >
-        <BigStat label="Distancia" value={route.totalKm.toFixed(1)} unit="km" />
-        <BigStat label="Sinuosidad" value={String(Math.round(route.curviness * 100))} unit="%" />
-        <BigStat
-          label="Perfil"
-          value={state.custom ? 'Personalizado' : PROFILE_LABELS[state.profile]}
-        />
-      </div>
+      <div className="scroll" style={{ overflowY: 'auto' }}>
+        {/* — avisos — */}
+        {notices.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 20px 0' }}>
+            {notices.map((n, i) => (
+              <NoticeBox key={i} notice={n} />
+            ))}
+          </div>
+        )}
 
-      {/* — desglose — */}
-      {expanded && (highways.length > 0 || surfaces.length > 0) && (
         <div
-          className="scroll"
           style={{
-            borderTop: '1px solid var(--rule)',
-            overflowY: 'auto',
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
             alignItems: 'start',
           }}
         >
-          <Column title="Composición de la vía" sub="por distancia">
-            {highways.map(([k, pct]) => (
-              <BreakdownBar
-                key={k}
-                label={HIGHWAY_LABELS[k] ?? k}
-                pct={pct}
-                color={
-                  HIGHWAY_ORDER.indexOf(k) < 3
-                    ? 'var(--terra)'
-                    : HIGHWAY_ORDER.indexOf(k) < 6
-                      ? 'var(--amber)'
-                      : 'var(--amber-deep)'
+          {/* — cifras — */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gap: '14px 12px',
+              padding: '14px 20px 16px',
+            }}
+          >
+            <Stat
+              label="Distancia"
+              value={fmtKm(stats.distanceMeters)}
+              caption={route.kind === 'ida-y-vuelta' ? 'contando ida y vuelta' : undefined}
+            />
+            <Stat
+              label="Curvas"
+              value={fmtPct(stats.curvyShare)}
+              caption="del recorrido en tramos con curvas"
+            />
+            <Stat label="Sin pavimentar" value={fmtPct(unpaved)} caption="ripio, tierra o arena" />
+            {detour && (
+              <Stat
+                label="Desvío"
+                value={
+                  detour.detourRatio - 1 < 0.005
+                    ? 'Ninguno'
+                    : `+${Math.round((detour.detourRatio - 1) * 100)} %`
+                }
+                caption={
+                  `frente a la más corta (${fmtKm(detour.shortestDistanceMeters)}); ` +
+                  `máximo +${Math.round((detour.maxDetourRatio - 1) * 100)} %` +
+                  (detour.binding ? '. El máximo limitó la ruta.' : '')
                 }
               />
-            ))}
-          </Column>
-          <Column title="Superficie" sub="por distancia">
-            {surfaces.map(([k, pct]) => (
-              <BreakdownBar
-                key={k}
-                label={SURFACE_LABELS[k] ?? k}
-                pct={pct}
-                color={k === 'asphalt' || k === 'concrete' ? 'var(--amber)' : 'var(--amber-deep)'}
+            )}
+            {tl && (
+              <Stat
+                label="Largo pedido"
+                value={fmtKm(tl.targetMeters, 0)}
+                caption={`logrado ${fmtKm(tl.achievedMeters)}, ${tl.withinBand ? 'dentro' : 'fuera'} del margen de ±${Math.round(TARGET_TOLERANCE * 100)} %`}
+                warn={!tl.withinBand}
               />
-            ))}
-          </Column>
+            )}
+          </div>
+
+          {/* — repartos — */}
+          {expanded && highways.length > 0 && (
+            <Column title="Tipo de vía" sub="por distancia">
+              {highways.map(([k, f]) => {
+                const rank = HIGHWAY_ORDER.indexOf(k);
+                return (
+                  <BreakdownBar
+                    key={k}
+                    label={k === 'otras' ? 'Otras' : (HIGHWAY_LABELS[k] ?? k)}
+                    share={f}
+                    valueLabel={fmtPct(f)}
+                    color={
+                      rank < 0
+                        ? 'var(--rule)'
+                        : rank < 3
+                          ? 'var(--terra)'
+                          : rank < 6
+                            ? 'var(--amber)'
+                            : 'var(--amber-deep)'
+                    }
+                  />
+                );
+              })}
+            </Column>
+          )}
+          {expanded && surfaces.length > 0 && (
+            <Column title="Superficie" sub="por distancia">
+              {surfaces.map(([k, f]) => (
+                <BreakdownBar
+                  key={k}
+                  label={k === 'otras' ? 'Otras' : (SURFACE_LABELS[k] ?? k)}
+                  share={f}
+                  valueLabel={fmtPct(f)}
+                  color={
+                    k === 'otras' || k === 'unknown'
+                      ? 'var(--rule)'
+                      : PAVED.has(k)
+                        ? 'var(--amber)'
+                        : 'var(--terra)'
+                  }
+                />
+              ))}
+              {inferred > 0 && (
+                <p style={{ ...text.caption, margin: '8px 0 0' }}>
+                  En el {fmtPct(inferred)} del recorrido OpenStreetMap no indica la superficie: se
+                  dedujo de las vías vecinas o del tipo de vía.
+                </p>
+              )}
+            </Column>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
 // ── Piezas ───────────────────────────────────────────────────
 
+function NoticeBox({ notice }: { notice: Notice }) {
+  return (
+    <div
+      role={notice.tone === 'warn' ? 'status' : undefined}
+      style={{
+        padding: '9px 12px',
+        background: 'var(--paper-3)',
+        borderLeft: `3px solid ${notice.tone === 'warn' ? 'var(--terra)' : 'var(--amber-deep)'}`,
+      }}
+    >
+      <div style={{ ...text.bodyStrong, color: 'var(--ink)' }}>{notice.title}</div>
+      {notice.body.map((line, i) => (
+        <div key={i} style={{ ...text.body, color: 'var(--ink-soft)', marginTop: 2 }}>
+          {line}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Column({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
   return (
-    <div style={{ padding: '12px 20px 14px', borderRight: '1px solid var(--rule-soft)' }}>
+    <div style={{ padding: '14px 20px 16px', borderLeft: '1px solid var(--rule-soft)' }}>
       <div
         style={{
           display: 'flex',
@@ -221,14 +378,22 @@ function Column({ title, sub, children }: { title: string; sub?: string; childre
   );
 }
 
-function BigStat({ label, value, unit }: { label: string; value: string; unit?: string }) {
+function Stat({
+  label,
+  value,
+  caption,
+  warn,
+}: {
+  label: string;
+  value: string;
+  caption?: string;
+  warn?: boolean;
+}) {
   return (
-    <div>
+    <div style={{ minWidth: 0 }}>
       <div style={{ ...text.eyebrow, marginBottom: 4 }}>{label}</div>
-      <div style={text.figureXl}>
-        {value}
-        <Unit>{unit}</Unit>
-      </div>
+      <div style={{ ...text.figureXl, color: warn ? 'var(--terra)' : undefined }}>{value}</div>
+      {caption && <div style={{ ...text.caption, marginTop: 4 }}>{caption}</div>}
     </div>
   );
 }
@@ -272,10 +437,4 @@ function GhostButton({
       {label}
     </button>
   );
-}
-
-/** Unidad junto a una cifra: siempre mono, siempre apagada. */
-function Unit({ children }: { children?: string }) {
-  if (!children) return null;
-  return <span style={{ ...text.data, color: 'var(--ink-mute)', marginLeft: 5 }}>{children}</span>;
 }

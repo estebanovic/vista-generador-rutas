@@ -226,7 +226,7 @@ export function LoadingOverlay({ message }: { message: string }) {
   );
 }
 
-export function EmptyHint({ hasGraph }: { hasGraph: boolean }) {
+export function EmptyHint({ hasGraph, action }: { hasGraph: boolean; action: string }) {
   return (
     <div
       style={{
@@ -249,7 +249,7 @@ export function EmptyHint({ hasGraph }: { hasGraph: boolean }) {
       {hasGraph ? (
         <>
           Configura los parámetros y pulsa{' '}
-          <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>Trazar la ruta</strong> para
+          <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{action}</strong> para
           comenzar.
         </>
       ) : (

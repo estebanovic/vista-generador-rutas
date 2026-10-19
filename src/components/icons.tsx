@@ -142,3 +142,26 @@ export const IconLayers: IconComponent = (p) => (
     <path d="M3 13l9 5 9-5M3 17l9 5 9-5" />
   </Icon>
 );
+
+export const IconDirect: IconComponent = (p) => (
+  <Icon {...p}>
+    <circle cx="5" cy="18" r="2" />
+    <circle cx="19" cy="6" r="2" />
+    <path d="M6.5 16.5c3-1 2-6 5-7.5s3.5-1 6-1.5" />
+  </Icon>
+);
+
+export const IconLoop: IconComponent = (p) => (
+  <Icon {...p}>
+    <path d="M12 20a8 8 0 118-8" />
+    <path d="M17 9l3 3 3-3" />
+    <circle cx="12" cy="20" r="1.6" fill="currentColor" />
+  </Icon>
+);
+
+export const IconRuler: IconComponent = (p) => (
+  <Icon {...p}>
+    <path d="M3 16l13-13 5 5-13 13z" />
+    <path d="M7 12l2 2M10 9l2 2M13 6l2 2" />
+  </Icon>
+);

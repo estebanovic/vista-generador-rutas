@@ -153,6 +153,8 @@ export function LabeledSlider({
   step = 1,
   labels,
   marks,
+  fillFrom = min,
+  ariaLabel,
 }: {
   value: number;
   onChange: (v: number) => void;
@@ -161,8 +163,13 @@ export function LabeledSlider({
   step?: number;
   labels?: string[];
   marks?: number;
+  /** Valor desde el que se pinta el relleno (el centro en una escala con signo). */
+  fillFrom?: number;
+  ariaLabel?: string;
 }) {
-  const pct = ((value - min) / (max - min)) * 100;
+  const at = (v: number) => ((v - min) / (max - min)) * 100;
+  const left = Math.min(at(fillFrom), at(value));
+  const width = Math.abs(at(value) - at(fillFrom));
   return (
     <div>
       <div style={{ position: 'relative', height: 22 }}>
@@ -189,10 +196,10 @@ export function LabeledSlider({
         <div
           style={{
             position: 'absolute',
-            left: 0,
+            left: `${left}%`,
             top: 10,
             height: 2,
-            width: `${pct}%`,
+            width: `${width}%`,
             background: 'var(--accent)',
             pointerEvents: 'none',
             zIndex: 1,
@@ -204,6 +211,7 @@ export function LabeledSlider({
           max={max}
           step={step}
           value={value}
+          aria-label={ariaLabel}
           onChange={(e) => onChange(Number(e.target.value))}
           style={{ position: 'relative', zIndex: 2 }}
         />
@@ -261,11 +269,14 @@ export function FieldShell({
 /** Barra de reparto (tipo de vía / superficie). */
 export function BreakdownBar({
   label,
-  pct,
+  share,
+  valueLabel,
   color,
 }: {
   label: string;
-  pct: number;
+  /** Fracción 0..1. */
+  share: number;
+  valueLabel: string;
   color: string;
 }) {
   const labelStyle: CSSProperties = {
@@ -288,10 +299,10 @@ export function BreakdownBar({
           overflow: 'hidden',
         }}
       >
-        <div style={{ width: `${pct}%`, height: '100%', background: color }} />
+        <div style={{ width: `${share * 100}%`, height: '100%', background: color }} />
       </div>
-      <span style={{ ...text.data, width: 32, textAlign: 'right', color: 'var(--ink-soft)' }}>
-        {pct.toFixed(0)}%
+      <span style={{ ...text.data, width: 40, textAlign: 'right', color: 'var(--ink-soft)' }}>
+        {valueLabel}
       </span>
     </div>
   );

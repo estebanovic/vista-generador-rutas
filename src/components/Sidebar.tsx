@@ -1,39 +1,59 @@
-/** Panel izquierdo: perfil, parámetros, importación de la zona y cálculo. */
+/** Panel izquierdo: modalidad, puntos, largo o desvío, perfil, importación y cálculo. */
+import { useState } from 'react';
 import {
-  closestOption,
+  curvesLabel,
+  defaultDetour,
+  DETOUR_MAX,
+  DETOUR_MIN,
+  effectiveDetour,
+  fmtNum,
+  parseKm,
   PROFILE_WEIGHTS,
-  SURFACE_NOTES,
-  SURFACE_OPTIONS,
-  twistinessLabel,
+  surfaceLabel,
+  surfaceNote,
+  TARGET_KM_MAX,
+  TARGET_KM_MIN,
+  TARGET_TOLERANCE,
+  targetLengthError,
+  traceLabel,
   W_MAX,
 } from '../lib/planner';
-import type { Phase, PlannerState, ProfileName, RouteWeights } from '../lib/types';
+import type { Mode, Phase, PlannerState, ProfileName, RouteWeights } from '../lib/types';
 import {
   Icon4x4,
   IconArrow,
   IconCompass,
   IconCurves,
+  IconDirect,
   IconFlag,
   IconLandscape,
   IconLayers,
+  IconLoop,
   IconMoto,
   IconPin,
+  IconRuler,
   IconSwap,
 } from './icons';
-import {
-  LabeledSlider,
-  PillRow,
-  SectionHeader,
-  Segmented,
-  type SegmentedOption,
-} from './primitives';
+import { LabeledSlider, SectionHeader, Segmented, type SegmentedOption } from './primitives';
 import { sectionStyle, text } from './styles';
 import { WaypointField } from './WaypointField';
 
+const MODES: SegmentedOption<Mode>[] = [
+  { value: 'directa', label: 'Directa', sub: 'A → B', icon: IconDirect },
+  { value: 'circuito', label: 'Circuito', sub: 'VUELVE AL INICIO', icon: IconLoop },
+  { value: 'destino-largo', label: 'Con largo', sub: 'A → B · KM', icon: IconRuler },
+];
+
+const MODE_NOTES: Record<Mode, string> = {
+  directa: 'La ruta más agradable entre dos puntos, sin alargarla más de lo que permitas.',
+  circuito: 'Sale del punto de partida y vuelve a él, con el largo que elijas. No hay destino.',
+  'destino-largo': 'Llega al destino recorriendo aproximadamente el largo que elijas.',
+};
+
 const PROFILES: SegmentedOption<ProfileName>[] = [
   { value: 'moto-curvas', label: 'Curvas', sub: 'MOTO', icon: IconMoto },
-  { value: '4x4', label: '4×4', sub: 'RURAL', icon: Icon4x4 },
-  { value: 'scenic', label: 'Escénico', sub: 'PANORÁMICO', icon: IconLandscape },
+  { value: '4x4', label: '4×4', sub: 'RIPIO Y TIERRA', icon: Icon4x4 },
+  { value: 'scenic', label: 'Escénico', sub: 'CURVAS PAVIMENTADAS', icon: IconLandscape },
 ];
 
 export interface SidebarProps {
@@ -42,6 +62,8 @@ export interface SidebarProps {
   phase: Phase;
   error: string | null;
   onTrace: () => void;
+  /** Qué punto fija el próximo clic en el mapa. */
+  nextClick: 'origin' | 'destination';
   importing: boolean;
   importStatus: string | null;
   onImport: () => void;
@@ -53,6 +75,7 @@ export function Sidebar({
   phase,
   error,
   onTrace,
+  nextClick,
   importing,
   importStatus,
   onImport,
@@ -65,8 +88,23 @@ export function Sidebar({
   const setWeight = (patch: Partial<RouteWeights>) =>
     set({ ...state, custom: true, weights: { ...state.weights, ...patch } });
 
-  const surfaceValue = closestOption(SURFACE_OPTIONS, state.weights.surfaceWeight);
-  const surfaceLabel = SURFACE_OPTIONS.find((o) => o.value === surfaceValue)!.label;
+  const circuit = state.mode === 'circuito';
+  const withLength = state.mode !== 'directa';
+  const lengthError = withLength ? targetLengthError(state.targetLengthKm) : null;
+  const invalid = lengthError != null;
+  const busy = phase === 'computing';
+
+  const clickHint = circuit
+    ? 'Haz clic en el mapa para fijar el punto de partida.'
+    : nextClick === 'origin'
+      ? 'El próximo clic en el mapa fija el punto de partida.'
+      : 'El próximo clic en el mapa fija el destino.';
+
+  const actionLabel = busy
+    ? 'Calculando…'
+    : phase === 'ready'
+      ? 'Recalcular'
+      : traceLabel(state.mode);
 
   return (
     <aside
@@ -80,6 +118,8 @@ export function Sidebar({
         borderRight: '1px solid var(--rule)',
         position: 'relative',
         zIndex: 10,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       {/* — masthead — */}
@@ -88,16 +128,30 @@ export function Sidebar({
           <IconCompass size={22} />
           <div style={text.displayXl}>Calculadora de rutas</div>
         </div>
-        <div style={{ ...text.aside, marginTop: 2 }}>Planifica rutas a tu medida.</div>
+        <div style={{ ...text.aside, marginTop: 2 }}>
+          Rutas en auto pensadas para disfrutar el camino.
+        </div>
       </header>
 
-      {/* — trayecto — */}
+      {/* — 01 recorrido — */}
       <div style={sectionStyle}>
-        <div style={{ ...text.eyebrow, marginBottom: 10 }}>El trayecto</div>
+        <SectionHeader index={1} title="Recorrido" />
+        <Segmented
+          options={MODES}
+          value={state.mode}
+          onChange={(mode) => set({ ...state, mode })}
+          columns={3}
+        />
+        <p style={{ ...text.aside, margin: '12px 0 0' }}>{MODE_NOTES[state.mode]}</p>
+      </div>
+
+      {/* — 02 puntos — */}
+      <div style={sectionStyle}>
+        <SectionHeader index={2} title={circuit ? 'Punto de partida' : 'Puntos'} />
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr auto',
+            gridTemplateColumns: circuit ? '1fr' : '1fr auto',
             gap: 8,
             alignItems: 'center',
           }}
@@ -110,53 +164,47 @@ export function Sidebar({
               onChange={(w) => set({ ...state, origin: w })}
               placeholder="Punto de partida"
             />
-            <WaypointField
-              icon={IconFlag}
-              accent="var(--terra)"
-              value={state.destination}
-              onChange={(w) => set({ ...state, destination: w })}
-              placeholder="Destino"
-            />
+            {!circuit && (
+              <WaypointField
+                icon={IconFlag}
+                accent="var(--terra)"
+                value={state.destination}
+                onChange={(w) => set({ ...state, destination: w })}
+                placeholder="Destino"
+              />
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              set({ ...state, origin: state.destination, destination: state.origin })
-            }
-            title="Invertir origen y destino"
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 999,
-              border: '1px solid var(--rule)',
-              background: 'transparent',
-              color: 'var(--ink-soft)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all .15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'var(--ink-soft)';
-              e.currentTarget.style.color = 'var(--ink)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'var(--rule)';
-              e.currentTarget.style.color = 'var(--ink-soft)';
-            }}
-          >
-            <IconSwap size={14} />
-          </button>
+          {!circuit && (
+            <RoundButton
+              title="Invertir partida y destino"
+              onClick={() =>
+                set({ ...state, origin: state.destination, destination: state.origin })
+              }
+            >
+              <IconSwap size={14} />
+            </RoundButton>
+          )}
         </div>
         <p style={{ ...text.aside, margin: '10px 0 0' }}>
-          O fija los puntos haciendo clic en el mapa.
+          {clickHint} También puedes arrastrar los marcadores.
         </p>
       </div>
 
-      {/* — 01 perfil — */}
+      {/* — 03 largo o desvío — */}
+      {withLength ? (
+        <LengthSection
+          value={state.targetLengthKm}
+          error={lengthError}
+          onChange={(targetLengthKm) => set({ ...state, targetLengthKm })}
+        />
+      ) : (
+        <DetourSection state={state} set={set} />
+      )}
+
+      {/* — 04 perfil — */}
       <div style={sectionStyle}>
         <SectionHeader
-          index={1}
+          index={4}
           title="Perfil"
           value={state.custom ? 'Personalizado' : undefined}
         />
@@ -166,14 +214,19 @@ export function Sidebar({
           onChange={pickProfile}
           columns={3}
         />
+        <p style={{ ...text.aside, margin: '12px 0 0' }}>
+          {state.custom
+            ? 'Ajustaste curvas o tipo de camino: la ruta usa tus valores.'
+            : 'Elige un punto de partida y afínalo con los controles de abajo.'}
+        </p>
       </div>
 
-      {/* — 02 curvas — */}
+      {/* — 05 curvas — */}
       <div style={sectionStyle}>
         <SectionHeader
-          index={2}
+          index={5}
           title="Curvas"
-          value={twistinessLabel(state.weights.curvinessWeight)}
+          value={curvesLabel(state.weights.curvinessWeight)}
         />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ color: 'var(--ink-mute)', flex: '0 0 auto', display: 'flex' }}>
@@ -185,27 +238,43 @@ export function Sidebar({
               onChange={(v) => setWeight({ curvinessWeight: v })}
               max={W_MAX}
               step={0.5}
-              labels={['Recta', 'Sinuosa', 'Caracol']}
+              labels={['Indiferente', 'Mucho']}
               marks={5}
+              ariaLabel="Cuánto buscar curvas"
             />
           </div>
         </div>
+        <p style={{ ...text.aside, margin: '10px 0 0' }}>
+          Cuánto evitar los tramos rectos para buscar curvas.
+        </p>
       </div>
 
-      {/* — 03 tipo de camino — */}
+      {/* — 06 tipo de camino — */}
       <div style={sectionStyle}>
-        <SectionHeader index={3} title="Tipo de camino" />
-        <PillRow
-          options={SURFACE_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
-          value={String(surfaceValue)}
-          onChange={(v) => setWeight({ surfaceWeight: Number(v) })}
+        <SectionHeader
+          index={6}
+          title="Tipo de camino"
+          value={surfaceLabel(state.weights.surfaceWeight)}
         />
-        <p style={{ ...text.aside, margin: '12px 0 0' }}>{SURFACE_NOTES[surfaceLabel]}</p>
+        <LabeledSlider
+          value={state.weights.surfaceWeight}
+          onChange={(v) => setWeight({ surfaceWeight: v })}
+          min={-W_MAX}
+          max={W_MAX}
+          step={0.5}
+          fillFrom={0}
+          labels={['Ripio y tierra', 'Indiferente', 'Pavimento']}
+          marks={5}
+          ariaLabel="Preferencia de superficie"
+        />
+        <p style={{ ...text.aside, margin: '10px 0 0' }}>
+          {surfaceNote(state.weights.surfaceWeight)}
+        </p>
       </div>
 
-      {/* — 04 cartografía — */}
+      {/* — 07 cartografía — */}
       <div style={sectionStyle}>
-        <SectionHeader index={4} title="Cartografía" />
+        <SectionHeader index={7} title="Cartografía" />
         <p style={{ ...text.aside, margin: '0 0 10px' }}>
           El trazador sólo conoce las calles ya importadas.
         </p>
@@ -240,15 +309,25 @@ export function Sidebar({
       </div>
 
       {/* — acción — */}
-      <div style={{ padding: '20px 22px 28px' }}>
+      <div
+        style={{
+          padding: '16px 22px 22px',
+          marginTop: 'auto',
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 5,
+          background: 'var(--paper)',
+          borderTop: '1px solid var(--rule)',
+        }}
+      >
         <button
           type="button"
           onClick={onTrace}
-          disabled={phase === 'computing'}
+          disabled={busy || invalid}
           style={{
             ...text.display,
             width: '100%',
-            background: phase === 'ready' ? 'var(--accent-deep)' : 'var(--accent)',
+            background: 'var(--accent)',
             color: 'var(--paper)',
             border: 'none',
             padding: '14px 16px',
@@ -256,30 +335,24 @@ export function Sidebar({
             alignItems: 'center',
             justifyContent: 'center',
             gap: 10,
-            cursor: phase === 'computing' ? 'wait' : 'pointer',
-            opacity: phase === 'computing' ? 0.7 : 1,
+            cursor: busy ? 'wait' : invalid ? 'not-allowed' : 'pointer',
+            opacity: busy || invalid ? 0.6 : 1,
             transition: 'background .15s',
           }}
           onMouseEnter={(e) => {
-            if (phase !== 'computing') e.currentTarget.style.background = 'var(--accent-deep)';
+            if (!busy && !invalid) e.currentTarget.style.background = 'var(--accent-deep)';
           }}
           onMouseLeave={(e) => {
-            if (phase !== 'computing') {
-              e.currentTarget.style.background =
-                phase === 'ready' ? 'var(--accent-deep)' : 'var(--accent)';
-            }
+            e.currentTarget.style.background = 'var(--accent)';
           }}
         >
-          {phase === 'computing'
-            ? 'Trazando…'
-            : phase === 'ready'
-              ? 'Recalcular ruta'
-              : 'Trazar la ruta'}
+          {actionLabel}
           <IconArrow size={14} />
         </button>
 
         {error && (
           <div
+            role="alert"
             style={{
               ...text.body,
               marginTop: 12,
@@ -294,5 +367,168 @@ export function Sidebar({
         )}
       </div>
     </aside>
+  );
+}
+
+// ── Secciones ────────────────────────────────────────────────
+
+/** Hasta un decimal, sin ceros de relleno: 25,5 · 34,5 · 60. */
+const fmtLoose = (x: number) => x.toLocaleString('es', { maximumFractionDigits: 1 });
+
+function LengthSection({
+  value,
+  error,
+  onChange,
+}: {
+  value: string;
+  error: string | null;
+  onChange: (v: string) => void;
+}) {
+  const [focus, setFocus] = useState(false);
+  const km = parseKm(value);
+  const band =
+    km != null && !error
+      ? `Se acepta entre ${fmtLoose(km * (1 - TARGET_TOLERANCE))} y ${fmtLoose(km * (1 + TARGET_TOLERANCE))} km (±${Math.round(TARGET_TOLERANCE * 100)} %).`
+      : null;
+  return (
+    <div style={sectionStyle}>
+      <SectionHeader index={3} title="Largo" />
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '9px 10px',
+          background: 'var(--paper-2)',
+          border: `1px solid ${error ? 'var(--terra)' : focus ? 'var(--accent)' : 'var(--rule-soft)'}`,
+          borderRadius: 2,
+          transition: 'border-color .15s',
+        }}
+      >
+        <span style={{ color: 'var(--ink-mute)', display: 'flex' }}>
+          <IconRuler size={14} />
+        </span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setFocus(true)}
+          onBlur={() => setFocus(false)}
+          aria-label="Largo deseado en kilómetros"
+          aria-invalid={error != null}
+          style={{
+            ...text.bodyStrong,
+            flex: 1,
+            minWidth: 0,
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--ink)',
+          }}
+        />
+        <span style={{ ...text.data, color: 'var(--ink-mute)' }}>KM</span>
+      </label>
+      <p
+        style={{
+          ...(error ? text.body : text.aside),
+          margin: '10px 0 0',
+          color: error ? 'var(--terra)' : undefined,
+        }}
+      >
+        {error ??
+          band ??
+          `Entre ${TARGET_KM_MIN} y ${TARGET_KM_MAX} km, con una tolerancia de ±${Math.round(TARGET_TOLERANCE * 100)} %.`}
+      </p>
+    </div>
+  );
+}
+
+function DetourSection({
+  state,
+  set,
+}: {
+  state: PlannerState;
+  set: (next: PlannerState) => void;
+}) {
+  const ratio = effectiveDetour(state);
+  const isDefault = state.maxDetourRatio == null;
+  return (
+    <div style={sectionStyle}>
+      <SectionHeader index={3} title="Desvío máximo" value={`×${fmtNum(ratio)}`} />
+      <LabeledSlider
+        value={ratio}
+        onChange={(v) => set({ ...state, maxDetourRatio: v })}
+        min={DETOUR_MIN}
+        max={DETOUR_MAX}
+        step={0.1}
+        labels={['Lo más corta', '×2', '×3']}
+        marks={5}
+        ariaLabel="Desvío máximo frente a la ruta más corta"
+      />
+      <p style={{ ...text.aside, margin: '10px 0 0' }}>
+        {ratio <= DETOUR_MIN
+          ? 'La ruta no puede ser más larga que la más corta posible.'
+          : `La ruta puede ser hasta un ${Math.round((ratio - 1) * 100)} % más larga que la más corta, para ganar curvas o el tipo de camino que prefieres.`}{' '}
+        {isDefault ? (
+          'Es el valor del perfil.'
+        ) : (
+          <button
+            type="button"
+            onClick={() => set({ ...state, maxDetourRatio: null })}
+            style={{
+              ...text.bodySm,
+              padding: 0,
+              border: 'none',
+              background: 'none',
+              color: 'var(--accent)',
+              textDecoration: 'underline',
+            }}
+          >
+            Volver al del perfil (×{fmtNum(defaultDetour(state))})
+          </button>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function RoundButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: 999,
+        border: '1px solid var(--rule)',
+        background: 'transparent',
+        color: 'var(--ink-soft)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'all .15s',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = 'var(--ink-soft)';
+        e.currentTarget.style.color = 'var(--ink)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'var(--rule)';
+        e.currentTarget.style.color = 'var(--ink-soft)';
+      }}
+    >
+      {children}
+    </button>
   );
 }

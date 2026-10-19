@@ -10,7 +10,13 @@ import { ResultsPanel } from './components/ResultsPanel';
 import { Sidebar } from './components/Sidebar';
 import { EmptyHint, LayerSwitch, LoadingOverlay, SearchBox } from './components/overlays';
 import { downloadGpx } from './lib/gpx';
-import { buildRouteView, PROFILE_WEIGHTS, toRequestBody } from './lib/planner';
+import {
+  buildRouteView,
+  PROFILE_WEIGHTS,
+  routeTitle,
+  toRequestBody,
+  traceLabel,
+} from './lib/planner';
 import type { Bbox, Phase, PlannerState, RouteView, Waypoint } from './lib/types';
 
 const DEFAULT_STATE: PlannerState = {
@@ -20,8 +26,11 @@ const DEFAULT_STATE: PlannerState = {
   custom: false,
   weights: { ...PROFILE_WEIGHTS['moto-curvas'] },
   mode: 'directa',
-  targetLengthKm: 60,
+  targetLengthKm: '60',
+  maxDetourRatio: null,
 };
+
+type PointTarget = 'origin' | 'destination';
 
 export default function App() {
   const [state, setState] = useState<PlannerState>(DEFAULT_STATE);
@@ -38,8 +47,8 @@ export default function App() {
   const [hasGraph, setHasGraph] = useState(true);
 
   const getBoundsRef = useRef<(() => Bbox) | null>(null);
-  /** Alterna origen → destino en los clics sobre el mapa. */
-  const nextClickRef = useRef<'origin' | 'destination'>('origin');
+  /** Alterna origen → destino en los clics sobre el mapa (en el circuito, siempre origen). */
+  const [nextClick, setNextClick] = useState<PointTarget>('origin');
 
   /** Cualquier cambio de parámetro invalida el trazado ya dibujado. */
   const update = (next: PlannerState) => {
@@ -47,10 +56,8 @@ export default function App() {
     if (phase === 'ready') setPhase('idle');
   };
 
-  const onMapClick = useCallback(async (lat: number, lon: number) => {
-    const target = nextClickRef.current;
-    nextClickRef.current = target === 'origin' ? 'destination' : 'origin';
-
+  /** Fija un punto desde el mapa (clic o arrastre) y le busca un nombre. */
+  const setPoint = useCallback(async (target: PointTarget, lat: number, lon: number) => {
     const provisional: Waypoint = { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, lat, lon };
     setState((s) => ({ ...s, [target]: provisional }));
     setPhase((p) => (p === 'ready' ? 'idle' : p));
@@ -63,6 +70,12 @@ export default function App() {
       return { ...s, [target]: { name, lat, lon } };
     });
   }, []);
+
+  const onMapClick = (lat: number, lon: number) => {
+    const target = state.mode === 'circuito' ? 'origin' : nextClick;
+    if (state.mode !== 'circuito') setNextClick(target === 'origin' ? 'destination' : 'origin');
+    setPoint(target, lat, lon);
+  };
 
   const onImport = async () => {
     const bounds = getBoundsRef.current?.();
@@ -104,7 +117,7 @@ export default function App() {
   };
 
   const exportGpx = () => {
-    if (route) downloadGpx(route, `${route.origin.name} - ${route.destination.name}`);
+    if (route) downloadGpx(route, routeTitle(route));
   };
 
   const showRoute = phase === 'ready' ? route : null;
@@ -117,6 +130,7 @@ export default function App() {
         phase={phase}
         error={error}
         onTrace={compute}
+        nextClick={nextClick}
         importing={importing}
         importStatus={importStatus}
         onImport={onImport}
@@ -127,9 +141,11 @@ export default function App() {
           route={showRoute}
           origin={state.origin}
           destination={state.destination}
+          showDestination={state.mode !== 'circuito'}
           layer={layer}
           importedBbox={importedBbox}
           onMapClick={onMapClick}
+          onMarkerDrag={setPoint}
           onBoundsRef={(fn) => {
             getBoundsRef.current = fn;
           }}
@@ -142,14 +158,10 @@ export default function App() {
         {phase === 'computing' && <LoadingOverlay message="Consultando cartografía" />}
 
         {showRoute && (
-          <ResultsPanel
-            route={showRoute}
-            state={state}
-            onExportGpx={exportGpx}
-          />
+          <ResultsPanel route={showRoute} onExportGpx={exportGpx} />
         )}
 
-        {phase === 'idle' && <EmptyHint hasGraph={hasGraph} />}
+        {phase === 'idle' && <EmptyHint hasGraph={hasGraph} action={traceLabel(state.mode)} />}
       </main>
 
       {/* Grano de película sobre toda la app. */}
