@@ -226,7 +226,7 @@ export function Sidebar({
         <p style={{ ...text.aside, margin: '12px 0 0' }}>
           {state.custom
             ? 'Ajustaste curvas o tipo de camino: la ruta usa tus valores.'
-            : 'Elige un punto de partida y afínalo con los controles de abajo.'}
+            : 'Elige uno como base y afínalo con los controles de abajo.'}
         </p>
       </div>
 

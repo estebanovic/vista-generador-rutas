@@ -7,8 +7,8 @@
  *   mono  → datos (km, %, coordenadas)
  *
  * La **cursiva** está reservada a dos cosas y a ninguna más: la voz del
- * cartógrafo (`aside`) y los nombres propios de tramos e hitos (`value`,
- * `title`). No se usa en botones, subtítulos ni mensajes de error.
+ * cartógrafo (`aside`) y el nombre del trayecto (`title`). No se usa en
+ * botones, subtítulos ni mensajes de error.
  */
 import type { CSSProperties } from 'react';
 
@@ -60,13 +60,6 @@ export const text = {
     lineHeight: 1,
     letterSpacing: '-0.01em',
   },
-  /** Cifra secundaria. */
-  figure: {
-    fontFamily: FONT.serif,
-    fontSize: SIZE.lg,
-    fontWeight: 500,
-    lineHeight: 1.1,
-  },
   /** Texto de interfaz. */
   body: {
     fontFamily: FONT.sans,
@@ -105,7 +98,7 @@ export const text = {
     lineHeight: 1.4,
     color: 'var(--ink-mute)',
   },
-  /** Dato numérico: km, porcentajes, coordenadas, fechas. */
+  /** Dato numérico: km, porcentajes, coordenadas. */
   data: {
     fontFamily: FONT.mono,
     fontSize: SIZE.xs,
@@ -119,13 +112,6 @@ export const text = {
     fontStyle: 'italic',
     lineHeight: 1.45,
     color: 'var(--ink-mute)',
-  },
-  /** Nombre propio de un tramo o un hito. */
-  value: {
-    fontFamily: FONT.serif,
-    fontSize: SIZE.md,
-    fontStyle: 'italic',
-    lineHeight: 1.3,
   },
 } satisfies Record<string, CSSProperties>;
 

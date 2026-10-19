@@ -59,6 +59,10 @@ export const adaptNotice = (message: string) => adapt(message, NOTICE_RULES);
 // ── Errores ──────────────────────────────────────────────────
 
 const NETWORK = 'No hay conexión con el servidor de rutas. Revisa que esté en marcha e inténtalo de nuevo.';
+const REJECTED = 'El servidor no aceptó los datos del recorrido. Revisa los puntos y el largo, e inténtalo de nuevo.';
+
+/** Mensajes que nombran campos de la API o rutas HTTP: no sirven al usuario. */
+const TECHNICAL = /[a-z][A-Z]|POST \//;
 
 interface HttpLike {
   status: number;
@@ -104,9 +108,7 @@ export function describeRouteError(
   }
   // Los de validación llegan como array y en inglés: no deberían ocurrir,
   // porque el formulario los valida antes de enviar.
-  if (e.messages.length !== 1) {
-    return out('El servidor no aceptó los datos del recorrido. Revisa los puntos y el largo, e inténtalo de nuevo.');
-  }
+  if (e.messages.length !== 1) return out(REJECTED);
   const msg = e.messages[0];
   const point = whichPoint(msg, ctx);
 
@@ -131,7 +133,7 @@ export function describeRouteError(
   }
   m = msg.match(/^no hay circuito ni ida y vuelta posible: (.*)$/);
   if (m) {
-    return out(`Desde este punto no se puede armar un circuito ni una ida y vuelta. ${adaptNotice(m[1])} Prueba con otro largo o con otro punto de partida.`);
+    return out(`No se puede armar un circuito ni una ida y vuelta. ${adaptNotice(m[1])} Prueba con otro largo o con otro punto de partida.`);
   }
   if (/acceso al núcleo principal es de un solo sentido/.test(msg)) {
     return out('Desde este punto solo se sale por calles de un sentido y no hay cómo volver. Mueve el punto de partida.');
@@ -139,7 +141,7 @@ export function describeRouteError(
   if (/no hay camino al núcleo principal/.test(msg)) {
     return out('Desde este punto no se llega a calles donde se pueda armar un circuito. Mueve el punto de partida o importa una zona más amplia.');
   }
-  return out(adapt(msg, []));
+  return out(TECHNICAL.test(msg) ? REJECTED : adapt(msg, []));
 }
 
 /** Mensaje para el usuario ante un fallo de `POST /import`. */

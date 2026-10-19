@@ -117,12 +117,6 @@ export const IconDownload: IconComponent = (p) => (
   </Icon>
 );
 
-export const IconPrint: IconComponent = (p) => (
-  <Icon {...p}>
-    <path d="M7 9V3h10v6M7 18H4v-7h16v7h-3M7 14h10v7H7z" />
-  </Icon>
-);
-
 export const IconChevronDown: IconComponent = (p) => (
   <Icon {...p}>
     <path d="M6 9l6 6 6-6" />

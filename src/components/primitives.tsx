@@ -109,42 +109,6 @@ export function Segmented<T extends string>({
   );
 }
 
-export function PillRow<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-      {options.map((opt) => {
-        const sel = value === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            style={{
-              ...text.bodySm,
-              padding: '5px 11px',
-              background: sel ? 'var(--ink)' : 'transparent',
-              color: sel ? 'var(--paper)' : 'var(--ink-soft)',
-              border: `1px solid ${sel ? 'var(--ink)' : 'var(--rule)'}`,
-              borderRadius: 999,
-              transition: 'all .15s ease',
-            }}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function LabeledSlider({
   value,
   onChange,

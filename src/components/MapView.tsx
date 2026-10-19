@@ -310,47 +310,11 @@ export function MapView({
         }}
       />
 
-      {/* brújula */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 18,
-          right: 18,
-          width: 56,
-          height: 56,
-          borderRadius: '50%',
-          background: 'var(--paper)',
-          border: '1px solid var(--rule)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: 'var(--shadow-sm)',
-          zIndex: 900,
-        }}
-      >
-        <svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true">
-          <circle cx="20" cy="20" r="17" fill="none" stroke="var(--rule)" strokeWidth="0.6" />
-          <path d="M20 5 L23 20 L20 18 L17 20 Z" fill="var(--ink)" />
-          <path d="M20 35 L23 20 L20 22 L17 20 Z" fill="var(--rule)" />
-          <text
-            x="20"
-            y="11"
-            textAnchor="middle"
-            fontFamily={FONT.serif}
-            fontSize="6.5"
-            fontWeight="600"
-            fill="var(--ink)"
-          >
-            N
-          </text>
-        </svg>
-      </div>
-
       {/* zoom */}
       <div
         style={{
           position: 'absolute',
-          top: 86,
+          top: 18,
           right: 18,
           display: 'flex',
           flexDirection: 'column',
@@ -362,13 +326,20 @@ export function MapView({
           zIndex: 900,
         }}
       >
-        <button type="button" style={btn} title="Acercar" onClick={() => mapRef.current?.zoomIn()}>
+        <button
+          type="button"
+          style={btn}
+          title="Acercar"
+          aria-label="Acercar"
+          onClick={() => mapRef.current?.zoomIn()}
+        >
           <IconPlus size={14} />
         </button>
         <button
           type="button"
           style={{ ...btn, borderTop: '1px solid var(--rule-soft)' }}
           title="Alejar"
+          aria-label="Alejar"
           onClick={() => mapRef.current?.zoomOut()}
         >
           <IconMinus size={14} />
@@ -377,6 +348,7 @@ export function MapView({
           type="button"
           style={{ ...btn, borderTop: '1px solid var(--rule-soft)' }}
           title="Encuadrar la ruta"
+          aria-label="Encuadrar la ruta"
           onClick={() => {
             if (route && route.pts.length > 1) {
               if (mapRef.current) fitVisible(mapRef.current, L.polyline(route.pts).getBounds());

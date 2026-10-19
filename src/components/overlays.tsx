@@ -1,10 +1,13 @@
-/** Elementos flotantes sobre el mapa: buscador, capas, paleta, carga y pista vacía. */
+/** Elementos flotantes sobre el mapa: buscador, capas, carga y pista vacía. */
 import { useEffect, useRef, useState } from 'react';
 import { searchPlaces, type Suggestion } from '../api/geocode';
 import { IconSearch } from './icons';
 import type { Mode } from '../lib/types';
 import type { MapLayer } from './MapView';
 import { text } from './styles';
+
+/** Atajo del buscador tal como se escribe en cada sistema. */
+const SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘K' : 'Ctrl K';
 
 const card: React.CSSProperties = {
   position: 'absolute',
@@ -75,7 +78,8 @@ export function SearchBox({ onPick }: { onPick: (lat: number, lon: number) => vo
             if (e.key === 'Enter' && items.length) choose(items[0]);
             if (e.key === 'Escape') setOpen(false);
           }}
-          placeholder="Buscar lugar, ruta o coordenadas…"
+          placeholder="Buscar un lugar o coordenadas…"
+          aria-label="Buscar un lugar en el mapa"
           style={{
             ...text.body,
             flex: 1,
@@ -93,7 +97,7 @@ export function SearchBox({ onPick }: { onPick: (lat: number, lon: number) => vo
             padding: '2px 6px',
           }}
         >
-          ⌘K
+          {SHORTCUT}
         </span>
       </div>
 

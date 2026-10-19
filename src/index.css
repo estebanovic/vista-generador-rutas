@@ -20,7 +20,7 @@
    Todo color sale de estas variables.
    ───────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;0,6..96,600;1,6..96,400;1,6..96,500&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 @import 'leaflet/dist/leaflet.css';
 
 :root {
@@ -65,9 +65,6 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
-
-.serif { font-family: var(--serif-display); }
-.mono  { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
 input, select, button, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -141,11 +138,6 @@ input[type="range"]::-moz-range-thumb {
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-up { animation: fadeUp .4s ease-out both; }
-
-@keyframes slideInR {
-  from { opacity: 0; transform: translateX(20px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
 
 @keyframes spin { to { transform: rotate(360deg); } }
 

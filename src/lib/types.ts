@@ -146,4 +146,3 @@ export interface RouteView {
   targetLength?: TargetLengthInfo;
 }
 
-export type Phase = 'idle' | 'computing' | 'ready';

@@ -52,12 +52,6 @@ export const PROFILE_LABELS: Record<ProfileName, string> = {
   scenic: 'Escénico',
 };
 
-export const MODE_LABELS: Record<Mode, string> = {
-  directa: 'Ruta directa',
-  circuito: 'Circuito',
-  'destino-largo': 'Ruta con largo objetivo',
-};
-
 export const KIND_LABELS: Record<RouteKind, string> = {
   directa: 'Ruta directa',
   circuito: 'Circuito',
@@ -140,7 +134,7 @@ export function pointsProblem(state: PlannerState): string | null {
 }
 
 /** Distancia en línea recta entre partida y destino (km). */
-export const straightKm = (state: PlannerState) =>
+const straightKm = (state: PlannerState) =>
   haversineKm([state.origin.lat, state.origin.lon], [state.destination.lat, state.destination.lon]);
 
 /**
@@ -161,7 +155,7 @@ export function targetLengthHint(state: PlannerState): string | null {
 const R_KM = 6371;
 const toRad = (d: number) => (d * Math.PI) / 180;
 
-export function haversineKm(a: [number, number], b: [number, number]): number {
+function haversineKm(a: [number, number], b: [number, number]): number {
   const dLat = toRad(b[0] - a[0]);
   const dLon = toRad(b[1] - a[1]);
   const h =
