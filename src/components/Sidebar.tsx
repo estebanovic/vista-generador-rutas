@@ -1,5 +1,5 @@
 /** Panel izquierdo: modalidad, puntos, largo o desvío, perfil, importación y cálculo. */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   curvesLabel,
   defaultDetour,
@@ -8,6 +8,7 @@ import {
   effectiveDetour,
   fmtNum,
   parseKm,
+  pointsProblem,
   PROFILE_WEIGHTS,
   surfaceLabel,
   surfaceNote,
@@ -15,10 +16,11 @@ import {
   TARGET_KM_MIN,
   TARGET_TOLERANCE,
   targetLengthError,
+  targetLengthHint,
   traceLabel,
   W_MAX,
 } from '../lib/planner';
-import type { Mode, Phase, PlannerState, ProfileName, RouteWeights } from '../lib/types';
+import type { Mode, PlannerState, ProfileName, RouteWeights } from '../lib/types';
 import {
   Icon4x4,
   IconArrow,
@@ -56,28 +58,37 @@ const PROFILES: SegmentedOption<ProfileName>[] = [
   { value: 'scenic', label: 'Escénico', sub: 'CURVAS PAVIMENTADAS', icon: IconLandscape },
 ];
 
+/** Importación en curso o su resultado. */
+export type ImportState =
+  | { kind: 'running'; startedAt: number }
+  | { kind: 'done' | 'error'; text: string };
+
 export interface SidebarProps {
   state: PlannerState;
   set: (next: PlannerState) => void;
-  phase: Phase;
+  /** Hay un cálculo en curso: el botón queda bloqueado. */
+  busy: boolean;
+  hasRoute: boolean;
+  /** Dato inválido que impide calcular (largo o puntos), o `null`. */
+  problem: string | null;
   error: string | null;
   onTrace: () => void;
   /** Qué punto fija el próximo clic en el mapa. */
   nextClick: 'origin' | 'destination';
-  importing: boolean;
-  importStatus: string | null;
+  importState: ImportState | null;
   onImport: () => void;
 }
 
 export function Sidebar({
   state,
   set,
-  phase,
+  busy,
+  hasRoute,
+  problem,
   error,
   onTrace,
   nextClick,
-  importing,
-  importStatus,
+  importState,
   onImport,
 }: SidebarProps) {
   /** Cargar un perfil base reemplaza los dos pesos y vuelve a activarlo. */
@@ -91,8 +102,9 @@ export function Sidebar({
   const circuit = state.mode === 'circuito';
   const withLength = state.mode !== 'directa';
   const lengthError = withLength ? targetLengthError(state.targetLengthKm) : null;
-  const invalid = lengthError != null;
-  const busy = phase === 'computing';
+  const pointIssue = pointsProblem(state);
+  const invalid = problem != null;
+  const importing = importState?.kind === 'running';
 
   const clickHint = circuit
     ? 'Haz clic en el mapa para fijar el punto de partida.'
@@ -100,11 +112,7 @@ export function Sidebar({
       ? 'El próximo clic en el mapa fija el punto de partida.'
       : 'El próximo clic en el mapa fija el destino.';
 
-  const actionLabel = busy
-    ? 'Calculando…'
-    : phase === 'ready'
-      ? 'Recalcular'
-      : traceLabel(state.mode);
+  const actionLabel = busy ? 'Calculando…' : hasRoute ? 'Recalcular' : traceLabel(state.mode);
 
   return (
     <aside
@@ -195,6 +203,7 @@ export function Sidebar({
         <LengthSection
           value={state.targetLengthKm}
           error={lengthError}
+          hint={targetLengthHint(state)}
           onChange={(targetLengthKm) => set({ ...state, targetLengthKm })}
         />
       ) : (
@@ -301,10 +310,11 @@ export function Sidebar({
           <IconLayers size={13} />
           {importing ? 'Importando calles…' : 'Importar área visible'}
         </button>
-        {importStatus && (
-          <div style={{ ...text.data, marginTop: 8, color: 'var(--ink-mute)' }}>
-            {importStatus}
-          </div>
+        {importState && (
+          <ImportStatus
+            key={importState.kind === 'running' ? importState.startedAt : importState.kind}
+            state={importState}
+          />
         )}
       </div>
 
@@ -324,6 +334,7 @@ export function Sidebar({
           type="button"
           onClick={onTrace}
           disabled={busy || invalid}
+          aria-disabled={busy || invalid}
           style={{
             ...text.display,
             width: '100%',
@@ -349,6 +360,10 @@ export function Sidebar({
           {actionLabel}
           <IconArrow size={14} />
         </button>
+
+        {pointIssue && !busy && (
+          <p style={{ ...text.body, margin: '10px 0 0', color: 'var(--ink-soft)' }}>{pointIssue}</p>
+        )}
 
         {error && (
           <div
@@ -378,10 +393,13 @@ const fmtLoose = (x: number) => x.toLocaleString('es', { maximumFractionDigits: 
 function LengthSection({
   value,
   error,
+  hint,
   onChange,
 }: {
   value: string;
   error: string | null;
+  /** Aviso que no impide calcular. */
+  hint: string | null;
   onChange: (v: string) => void;
 }) {
   const [focus, setFocus] = useState(false);
@@ -439,7 +457,39 @@ function LengthSection({
           band ??
           `Entre ${TARGET_KM_MIN} y ${TARGET_KM_MAX} km, con una tolerancia de ±${Math.round(TARGET_TOLERANCE * 100)} %.`}
       </p>
+      {hint && (
+        <p style={{ ...text.body, margin: '6px 0 0', color: 'var(--amber)' }}>{hint}</p>
+      )}
     </div>
+  );
+}
+
+/** Progreso o resultado de la importación. Tarda de medio minuto a varios minutos. */
+function ImportStatus({ state }: { state: ImportState }) {
+  const [elapsed, setElapsed] = useState(0);
+  const startedAt = state.kind === 'running' ? state.startedAt : null;
+  useEffect(() => {
+    if (startedAt == null) return;
+    const id = setInterval(() => setElapsed(Date.now() - startedAt), 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
+  const style = { ...text.body, margin: '8px 0 0' };
+  if (state.kind === 'running') {
+    return (
+      <p role="status" style={{ ...style, color: 'var(--ink-soft)' }}>
+        Descargando las calles de OpenStreetMap ({Math.floor(elapsed / 1000)} s). Suele tardar entre
+        medio minuto y un minuto y medio; si OpenStreetMap está saturado, varios minutos.
+      </p>
+    );
+  }
+  return (
+    <p
+      role={state.kind === 'error' ? 'alert' : 'status'}
+      style={{ ...style, color: state.kind === 'error' ? 'var(--terra)' : 'var(--ink-soft)' }}
+    >
+      {state.text}
+    </p>
   );
 }
 

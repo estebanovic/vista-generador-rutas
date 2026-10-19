@@ -119,14 +119,23 @@ function topShares(breakdown: Record<string, number>): [string, number][] {
 
 export interface ResultsPanelProps {
   route: RouteView;
+  /** Los parámetros cambiaron desde que se calculó esta ruta. */
+  stale: boolean;
   onExportGpx: () => void;
 }
 
-export function ResultsPanel({ route, onExportGpx }: ResultsPanelProps) {
+export function ResultsPanel({ route, stale, onExportGpx }: ResultsPanelProps) {
   const [expanded, setExpanded] = useState(true);
   const { stats, detour, targetLength: tl, state } = route;
 
   const notices = buildNotices(route);
+  if (stale) {
+    notices.unshift({
+      tone: 'info',
+      title: 'Cambiaste los parámetros',
+      body: ['Esta ruta corresponde a la búsqueda anterior. Pulsa «Recalcular» para actualizarla.'],
+    });
+  }
   const highways = topShares(stats.highwayBreakdown);
   const surfaces = topShares(stats.surfaceBreakdown);
   const { unpaved } = surfaceSummary(stats.surfaceBreakdown);

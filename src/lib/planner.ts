@@ -120,6 +120,42 @@ export function targetLengthError(text: string): string | null {
   return null;
 }
 
+/** Distancia bajo la cual el backend trata el destino como el mismo punto (circuito). */
+const SAME_POINT_KM = 0.05;
+
+const validPoint = (w: { lat: number; lon: number }) =>
+  Number.isFinite(w.lat) && Number.isFinite(w.lon) && Math.abs(w.lat) <= 90 && Math.abs(w.lon) <= 180;
+
+/** Problema con los puntos que impide enviar la petición, o `null`. */
+export function pointsProblem(state: PlannerState): string | null {
+  if (!validPoint(state.origin)) return 'El punto de partida no es válido: elígelo de nuevo en el mapa.';
+  if (state.mode === 'circuito') return null;
+  if (!validPoint(state.destination)) return 'El destino no es válido: elígelo de nuevo en el mapa.';
+  if (straightKm(state) < SAME_POINT_KM) {
+    return state.mode === 'directa'
+      ? 'La partida y el destino están en el mismo lugar: sepáralos para trazar la ruta.'
+      : 'La partida y el destino están en el mismo lugar: sepáralos o elige Circuito.';
+  }
+  return null;
+}
+
+/** Distancia en línea recta entre partida y destino (km). */
+export const straightKm = (state: PlannerState) =>
+  haversineKm([state.origin.lat, state.origin.lon], [state.destination.lat, state.destination.lon]);
+
+/**
+ * Con destino y largo: si el destino ya está más lejos en línea recta que el
+ * máximo de la banda, ninguna ruta puede quedar dentro. Aviso, no error.
+ */
+export function targetLengthHint(state: PlannerState): string | null {
+  if (state.mode !== 'destino-largo') return null;
+  const km = parseKm(state.targetLengthKm);
+  if (km == null || targetLengthError(state.targetLengthKm)) return null;
+  const straight = straightKm(state);
+  if (km * (1 + TARGET_TOLERANCE) >= straight) return null;
+  return `En línea recta el destino ya está a ${fmtNum(straight, 0)} km: la ruta será más larga que lo pedido.`;
+}
+
 // ── Geometría ────────────────────────────────────────────────
 
 const R_KM = 6371;

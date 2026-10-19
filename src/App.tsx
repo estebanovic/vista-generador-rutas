@@ -1,5 +1,5 @@
 /**
- * Raíz del planificador. Máquina de estados idle → computing → ready y
+ * Raíz del planificador: estado de los controles, la ruta calculada y la
  * orquestación de las llamadas al backend (`POST /routes/calculate`, `POST /import`).
  */
 import { useCallback, useRef, useState } from 'react';
@@ -7,17 +7,26 @@ import { calculateRoute, importBbox } from './api/client';
 import { reverseGeocode } from './api/geocode';
 import { MapView, type MapLayer } from './components/MapView';
 import { ResultsPanel } from './components/ResultsPanel';
-import { Sidebar } from './components/Sidebar';
-import { EmptyHint, LayerSwitch, LoadingOverlay, SearchBox } from './components/overlays';
+import { Sidebar, type ImportState } from './components/Sidebar';
+import {
+  EmptyHint,
+  LayerSwitch,
+  LoadingOverlay,
+  SearchBox,
+  type ComputeJob,
+} from './components/overlays';
 import { downloadGpx } from './lib/gpx';
+import { describeImportError, describeRouteError } from './lib/messages';
 import {
   buildRouteView,
+  parseKm,
+  pointsProblem,
   PROFILE_WEIGHTS,
-  routeTitle,
+  targetLengthError,
   toRequestBody,
   traceLabel,
 } from './lib/planner';
-import type { Bbox, Phase, PlannerState, RouteView, Waypoint } from './lib/types';
+import type { Bbox, PlannerState, RouteView, Waypoint } from './lib/types';
 
 const DEFAULT_STATE: PlannerState = {
   origin: { name: 'Santiago Centro', lat: -33.4372, lon: -70.6506 },
@@ -30,45 +39,50 @@ const DEFAULT_STATE: PlannerState = {
   maxDetourRatio: null,
 };
 
+/**
+ * Tiempo máximo de espera de un cálculo. La búsqueda con largo objetivo tarda
+ * hasta ~7 s, pero con varias consultas a la vez el backend las encola.
+ */
+const CLIENT_TIMEOUT_MS = 45_000;
+
 type PointTarget = 'origin' | 'destination';
+
+const sameRequest = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 export default function App() {
   const [state, setState] = useState<PlannerState>(DEFAULT_STATE);
-  const [phase, setPhase] = useState<Phase>('idle');
   const [route, setRoute] = useState<RouteView | null>(null);
+  const [job, setJob] = useState<ComputeJob | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [layer, setLayer] = useState<MapLayer>('map');
   const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; nonce: number } | null>(null);
 
-  const [importing, setImporting] = useState(false);
-  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [importState, setImportState] = useState<ImportState | null>(null);
   const [importedBbox, setImportedBbox] = useState<Bbox | null>(null);
   const [hasGraph, setHasGraph] = useState(true);
 
   const getBoundsRef = useRef<(() => Bbox) | null>(null);
-  /** Alterna origen → destino en los clics sobre el mapa (en el circuito, siempre origen). */
+  /** Cálculo en curso; se aborta al cancelar o al vencer el plazo. */
+  const abortRef = useRef<AbortController | null>(null);
+  /** Alterna partida → destino en los clics sobre el mapa (en el circuito, siempre partida). */
   const [nextClick, setNextClick] = useState<PointTarget>('origin');
 
-  /** Cualquier cambio de parámetro invalida el trazado ya dibujado. */
-  const update = (next: PlannerState) => {
-    setState(next);
-    if (phase === 'ready') setPhase('idle');
-  };
+  const problem =
+    (state.mode !== 'directa' && targetLengthError(state.targetLengthKm)) || pointsProblem(state);
+  /** La ruta mostrada se pidió con otros parámetros: se conserva, pero se avisa. */
+  const stale = route != null && (problem != null || !sameRequest(route.request, toRequestBody(state)));
 
   /** Fija un punto desde el mapa (clic o arrastre) y le busca un nombre. */
   const setPoint = useCallback(async (target: PointTarget, lat: number, lon: number) => {
     const provisional: Waypoint = { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, lat, lon };
     setState((s) => ({ ...s, [target]: provisional }));
-    setPhase((p) => (p === 'ready' ? 'idle' : p));
 
     const name = await reverseGeocode(lat, lon);
-    setState((s) => {
-      const current = s[target];
-      // Si el usuario ya movió el punto otra vez, no pisamos lo nuevo.
-      if (current.lat !== lat || current.lon !== lon) return s;
-      return { ...s, [target]: { name, lat, lon } };
-    });
+    const named = (w: Waypoint) => (w.lat === lat && w.lon === lon ? { name, lat, lon } : w);
+    // Si el usuario ya movió el punto otra vez, no pisamos lo nuevo.
+    setState((s) => ({ ...s, [target]: named(s[target]) }));
+    setRoute((r) => r && { ...r, state: { ...r.state, [target]: named(r.state[target]) } });
   }, []);
 
   const onMapClick = (lat: number, lon: number) => {
@@ -80,65 +94,88 @@ export default function App() {
   const onImport = async () => {
     const bounds = getBoundsRef.current?.();
     if (!bounds) return;
-    setImporting(true);
-    setImportStatus('Descargando calles de OSM… (10-60 s)');
+    setImportState({ kind: 'running', startedAt: Date.now() });
     try {
       const res = await importBbox(bounds);
-      setImportStatus(`${res.nodes} nodos · ${res.edges} aristas importados.`);
+      setImportState({
+        kind: 'done',
+        text: `Zona importada: ${res.ways.toLocaleString('es')} vías. Ya puedes trazar en ella.`,
+      });
       setImportedBbox(bounds);
       setHasGraph(true);
     } catch (e) {
-      setImportStatus(`Error: ${(e as Error).message}`);
-    } finally {
-      setImporting(false);
+      setImportState({ kind: 'error', text: describeImportError(e) });
     }
   };
 
+  /** Calcula con los parámetros actuales. No se dispara solo: siempre lo pide el usuario. */
   const compute = async () => {
-    setPhase('computing');
-    setError(null);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ctrl.abort();
+    }, CLIENT_TIMEOUT_MS);
 
+    const snapshot = state;
+    const body = toRequestBody(snapshot);
+    setJob({ mode: snapshot.mode, km: parseKm(snapshot.targetLengthKm), startedAt: Date.now() });
+    setError(null);
     try {
-      const result = await calculateRoute(toRequestBody(state));
-      setRoute(buildRouteView(result, state));
+      const result = await calculateRoute(body, ctrl.signal);
+      if (abortRef.current !== ctrl) return;
+      setRoute(buildRouteView(result, snapshot));
       setHasGraph(true);
-      setPhase('ready');
     } catch (e) {
-      const msg = (e as Error).message;
-      if (/grafo está vacío|No hay vías importadas/i.test(msg)) setHasGraph(false);
-      setError(
-        msg === 'Failed to fetch'
-          ? 'No hay respuesta del trazador. ¿Está corriendo el backend en el puerto configurado?'
-          : msg,
-      );
-      setRoute(null);
-      setPhase('idle');
+      // Cancelado por el usuario (o reemplazado por otro cálculo): sin mensaje.
+      if (abortRef.current !== ctrl || (ctrl.signal.aborted && !timedOut)) return;
+      const { message, noGraph } = describeRouteError(e, {
+        origin: body.origin,
+        destination: body.destination,
+        timedOut,
+      });
+      if (noGraph) setHasGraph(false);
+      setError(message);
+    } finally {
+      clearTimeout(timer);
+      if (abortRef.current === ctrl) {
+        abortRef.current = null;
+        setJob(null);
+      }
     }
   };
 
-  const exportGpx = () => {
-    if (route) downloadGpx(route, routeTitle(route));
+  /** Deja de esperar la respuesta; el backend termina el cálculo igual. */
+  const cancel = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setJob(null);
   };
-
-  const showRoute = phase === 'ready' ? route : null;
 
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', background: 'var(--paper)' }}>
       <Sidebar
         state={state}
-        set={update}
-        phase={phase}
+        set={setState}
+        busy={job != null}
+        hasRoute={route != null}
+        problem={problem}
         error={error}
         onTrace={compute}
         nextClick={nextClick}
-        importing={importing}
-        importStatus={importStatus}
+        importState={importState}
         onImport={onImport}
       />
 
       <main style={{ flex: 1, position: 'relative', minWidth: 0 }}>
         <MapView
-          route={showRoute}
+          route={route}
           origin={state.origin}
           destination={state.destination}
           showDestination={state.mode !== 'circuito'}
@@ -155,13 +192,13 @@ export default function App() {
         <SearchBox onPick={(lat, lon) => setFlyTo({ lat, lon, nonce: Date.now() })} />
         <LayerSwitch value={layer} onChange={setLayer} />
 
-        {phase === 'computing' && <LoadingOverlay message="Consultando cartografía" />}
+        {job && <LoadingOverlay job={job} onCancel={cancel} />}
 
-        {showRoute && (
-          <ResultsPanel route={showRoute} onExportGpx={exportGpx} />
+        {route && (
+          <ResultsPanel route={route} stale={stale} onExportGpx={() => downloadGpx(route)} />
         )}
 
-        {phase === 'idle' && <EmptyHint hasGraph={hasGraph} action={traceLabel(state.mode)} />}
+        {!route && !job && <EmptyHint hasGraph={hasGraph} action={traceLabel(state.mode)} />}
       </main>
 
       {/* Grano de película sobre toda la app. */}
