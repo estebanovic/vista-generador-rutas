@@ -20,7 +20,8 @@ const DEFAULT_STATE: PlannerState = {
   profile: 'moto-curvas',
   custom: false,
   weights: { ...PROFILE_WEIGHTS['moto-curvas'] },
-  tripLength: 'direct',
+  mode: 'directa',
+  targetLengthKm: 60,
 };
 
 export default function App() {
@@ -105,7 +106,7 @@ export default function App() {
       setPhase('ready');
     } catch (e) {
       const msg = (e as Error).message;
-      if (/grafo está vacío|nodos cercanos/i.test(msg)) setHasGraph(false);
+      if (/grafo está vacío|No hay vías importadas/i.test(msg)) setHasGraph(false);
       setError(
         msg === 'Failed to fetch'
           ? 'No hay respuesta del trazador. ¿Está corriendo el backend en el puerto configurado?'
@@ -127,7 +128,6 @@ export default function App() {
       <Sidebar
         state={state}
         set={update}
-        route={showRoute}
         phase={phase}
         error={error}
         onTrace={compute}

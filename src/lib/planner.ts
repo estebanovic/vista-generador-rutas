@@ -3,6 +3,7 @@
  * y las métricas derivadas (tiempo, consumo) que el backend no calcula.
  */
 import type {
+  CalculateRouteBody,
   Highlight,
   PlannerState,
   ProfileName,
@@ -10,7 +11,6 @@ import type {
   RouteResult,
   RouteView,
   RouteWeights,
-  TripLength,
 } from './types';
 
 // ── Perfiles base ────────────────────────────────────────────
@@ -21,25 +21,13 @@ import type {
  * petición pasa a enviarse como `custom`.
  */
 export const PROFILE_WEIGHTS: Record<ProfileName, RouteWeights> = {
-  'moto-curvas': {
-    distanceWeight: 0.05,
-    curvinessWeight: 1.0,
-    elevationWeight: 0.0,
-    surfaceWeight: 0.0,
-  },
-  '4x4': {
-    distanceWeight: 0.6,
-    curvinessWeight: 0.15,
-    elevationWeight: 0.0,
-    surfaceWeight: -0.7,
-  },
-  scenic: {
-    distanceWeight: 0.25,
-    curvinessWeight: 0.6,
-    elevationWeight: 0.4,
-    surfaceWeight: 0.5,
-  },
+  'moto-curvas': { curvinessWeight: 3, surfaceWeight: 0 },
+  '4x4': { curvinessWeight: 0, surfaceWeight: -6 },
+  scenic: { curvinessWeight: 4, surfaceWeight: 2 },
 };
+
+/** Peso máximo de cada criterio en el backend (`W_MAX`). */
+export const W_MAX = 6;
 
 export const PROFILE_LABELS: Record<ProfileName, string> = {
   'moto-curvas': 'Moto · curvas',
@@ -49,24 +37,11 @@ export const PROFILE_LABELS: Record<ProfileName, string> = {
 
 // ── Opciones de los controles específicos ────────────────────
 
-/** `surfaceWeight` firmado: >0 exige pavimento, <0 premia el ripio. */
+/** `surfaceWeight` firmado: >0 evita lo sin pavimentar, <0 evita el pavimento. */
 export const SURFACE_OPTIONS = [
-  { value: 1, label: 'Pavimento' },
+  { value: 4, label: 'Pavimento' },
   { value: 0, label: 'Mixto' },
-  { value: -0.7, label: 'Rural' },
-];
-
-/** `elevationWeight` firmado: >0 busca lo plano, <0 busca montaña. */
-export const ELEVATION_OPTIONS = [
-  { value: -0.7, label: 'Montañoso' },
-  { value: 0, label: 'Indiferente' },
-  { value: 1, label: 'Plano' },
-];
-
-export const TRIP_LENGTH_OPTIONS: { value: TripLength; label: string }[] = [
-  { value: 'direct', label: 'Directo' },
-  { value: 'medium', label: 'Medio' },
-  { value: 'long', label: 'Largo' },
+  { value: -6, label: 'Rural' },
 ];
 
 /** Opción más cercana a un peso, para resaltar la píldora activa. */
@@ -79,7 +54,9 @@ export function closestOption(
   ).value;
 }
 
-export function twistinessLabel(t: number): string {
+/** Etiqueta del peso de curvas (0..W_MAX). */
+export function twistinessLabel(weight: number): string {
+  const t = weight / W_MAX;
   if (t < 0.2) return 'Recta';
   if (t < 0.45) return 'Suelta';
   if (t < 0.7) return 'Sinuosa';
@@ -89,7 +66,7 @@ export function twistinessLabel(t: number): string {
 
 export const SURFACE_NOTES: Record<string, string> = {
   Pavimento: '“Asfalto y poco más — llegar cómodo y rápido.”',
-  Mixto: '“Sin preferencia: el trazador elige por curvas y desnivel.”',
+  Mixto: '“Sin preferencia: el trazador elige por curvas.”',
   Rural: '“Premia ripio y tierra — exige neumático adecuado.”',
 };
 
@@ -116,7 +93,8 @@ const CO2_PER_KM: Record<ProfileName, number> = {
 
 /** Cuanto más se busca la curva y menos el pavimento, más baja la media. */
 export function estimateSpeed(state: PlannerState): number {
-  const { curvinessWeight, surfaceWeight } = state.weights;
+  const curvinessWeight = state.weights.curvinessWeight / W_MAX;
+  const surfaceWeight = state.weights.surfaceWeight / W_MAX;
   const surfaceMul = surfaceWeight >= 0.5 ? 1.15 : surfaceWeight <= -0.4 ? 0.6 : 0.9;
   return BASE_SPEED[state.profile] * surfaceMul * (1 - curvinessWeight * 0.32);
 }
@@ -202,8 +180,8 @@ export function buildRouteView(
     pts,
     cumKm,
     totalKm,
-    ascent: result.stats.elevationGainMeters,
-    descent: result.stats.elevationLossMeters,
+    ascent: null,
+    descent: null,
     curviness: result.stats.curviness,
     avgSpeed,
     hours: avgSpeed > 0 ? totalKm / avgSpeed : 0,
@@ -253,17 +231,19 @@ export const SURFACE_LABELS: Record<string, string> = {
   unknown: 'Sin dato',
 };
 
-/** Cuerpo de `POST /routes/calculate` según haya perfil base o pesos propios. */
-export function toRequestBody(state: PlannerState) {
+/**
+ * Cuerpo de `POST /routes/calculate`. En el circuito se omite `destination`
+ * (con `null` el backend responde 400); las modalidades con longitud llevan
+ * `targetLengthKm`.
+ */
+export function toRequestBody(state: PlannerState): CalculateRouteBody {
   const origin = { lat: state.origin.lat, lon: state.origin.lon };
-  const destination = { lat: state.destination.lat, lon: state.destination.lon };
-  return state.custom
-    ? {
-        origin,
-        destination,
-        profile: 'custom' as const,
-        customWeights: state.weights,
-        tripLength: state.tripLength,
-      }
-    : { origin, destination, profile: state.profile, tripLength: state.tripLength };
+  const body: CalculateRouteBody = state.custom
+    ? { origin, profile: 'custom', customWeights: { ...state.weights } }
+    : { origin, profile: state.profile };
+  if (state.mode !== 'circuito') {
+    body.destination = { lat: state.destination.lat, lon: state.destination.lon };
+  }
+  if (state.mode !== 'directa') body.targetLengthKm = state.targetLengthKm;
+  return body;
 }

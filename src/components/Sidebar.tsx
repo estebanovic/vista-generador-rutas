@@ -1,15 +1,13 @@
 /** Panel izquierdo: perfil, parámetros, importación de la zona y cálculo. */
 import {
   closestOption,
-  ELEVATION_OPTIONS,
-  fmtMeters,
   PROFILE_WEIGHTS,
   SURFACE_NOTES,
   SURFACE_OPTIONS,
-  TRIP_LENGTH_OPTIONS,
   twistinessLabel,
+  W_MAX,
 } from '../lib/planner';
-import type { Phase, PlannerState, ProfileName, RouteView, RouteWeights } from '../lib/types';
+import type { Phase, PlannerState, ProfileName, RouteWeights } from '../lib/types';
 import {
   Icon4x4,
   IconArrow,
@@ -41,7 +39,6 @@ const PROFILES: SegmentedOption<ProfileName>[] = [
 export interface SidebarProps {
   state: PlannerState;
   set: (next: PlannerState) => void;
-  route: RouteView | null;
   phase: Phase;
   error: string | null;
   onTrace: () => void;
@@ -53,7 +50,6 @@ export interface SidebarProps {
 export function Sidebar({
   state,
   set,
-  route,
   phase,
   error,
   onTrace,
@@ -61,7 +57,7 @@ export function Sidebar({
   importStatus,
   onImport,
 }: SidebarProps) {
-  /** Cargar un perfil base reemplaza los cuatro pesos y vuelve a activarlo. */
+  /** Cargar un perfil base reemplaza los dos pesos y vuelve a activarlo. */
   const pickProfile = (p: ProfileName) =>
     set({ ...state, profile: p, custom: false, weights: { ...PROFILE_WEIGHTS[p] } });
 
@@ -70,7 +66,6 @@ export function Sidebar({
     set({ ...state, custom: true, weights: { ...state.weights, ...patch } });
 
   const surfaceValue = closestOption(SURFACE_OPTIONS, state.weights.surfaceWeight);
-  const elevationValue = closestOption(ELEVATION_OPTIONS, state.weights.elevationWeight);
   const surfaceLabel = SURFACE_OPTIONS.find((o) => o.value === surfaceValue)!.label;
 
   return (
@@ -186,8 +181,10 @@ export function Sidebar({
           </span>
           <div style={{ flex: 1 }}>
             <LabeledSlider
-              value={Math.round(state.weights.curvinessWeight * 100)}
-              onChange={(v) => setWeight({ curvinessWeight: v / 100 })}
+              value={state.weights.curvinessWeight}
+              onChange={(v) => setWeight({ curvinessWeight: v })}
+              max={W_MAX}
+              step={0.5}
               labels={['Recta', 'Sinuosa', 'Caracol']}
               marks={5}
             />
@@ -206,43 +203,9 @@ export function Sidebar({
         <p style={{ ...text.aside, margin: '12px 0 0' }}>{SURFACE_NOTES[surfaceLabel]}</p>
       </div>
 
-      {/* — 04 desnivel — */}
+      {/* — 04 cartografía — */}
       <div style={sectionStyle}>
-        <SectionHeader index={4} title="Desnivel" />
-        <PillRow
-          options={ELEVATION_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
-          value={String(elevationValue)}
-          onChange={(v) => setWeight({ elevationWeight: Number(v) })}
-        />
-        {route && (
-          <div
-            style={{
-              ...text.data,
-              marginTop: 12,
-              display: 'flex',
-              justifyContent: 'space-between',
-              color: 'var(--ink-mute)',
-            }}
-          >
-            <span>↑ {fmtMeters(route.ascent)}</span>
-            <span>↓ {fmtMeters(route.descent)}</span>
-          </div>
-        )}
-      </div>
-
-      {/* — 05 recorrido — */}
-      <div style={sectionStyle}>
-        <SectionHeader index={5} title="Recorrido" />
-        <PillRow
-          options={TRIP_LENGTH_OPTIONS}
-          value={state.tripLength}
-          onChange={(v) => set({ ...state, tripLength: v })}
-        />
-      </div>
-
-      {/* — 06 cartografía — */}
-      <div style={sectionStyle}>
-        <SectionHeader index={6} title="Cartografía" />
+        <SectionHeader index={4} title="Cartografía" />
         <p style={{ ...text.aside, margin: '0 0 10px' }}>
           El trazador sólo conoce las calles ya importadas.
         </p>
