@@ -180,10 +180,10 @@ export function MapView({
     endpointsRef.current = L.layerGroup(
       showDestination
         ? [
-            pin('origin', origin, token('--accent'), 'A', 'Partida'),
-            pin('destination', destination, token('--terra'), 'B', 'Destino'),
+            pin('origin', origin, token('--accent'), 'A', 'Partida · arrástrala para moverla'),
+            pin('destination', destination, token('--terra'), 'B', 'Destino · arrástralo para moverlo'),
           ]
-        : [pin('origin', origin, token('--accent'), 'A', 'Partida y llegada')],
+        : [pin('origin', origin, token('--accent'), 'A', 'Partida y llegada · arrástrala para moverla')],
     ).addTo(m);
   }, [origin, destination, showDestination]);
 

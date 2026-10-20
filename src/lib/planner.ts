@@ -88,13 +88,6 @@ export function surfaceLabel(weight: number): string {
   return weight > 0 ? `${strength} pavimento` : `${strength} ripio y tierra`;
 }
 
-export function surfaceNote(weight: number): string {
-  if (weight === 0) return 'Sin preferencia de superficie: decide el resto del perfil.';
-  return weight > 0
-    ? 'Evita los tramos de ripio, tierra o arena.'
-    : 'Busca ripio, tierra o arena y evita el pavimento.';
-}
-
 // ── Validación ───────────────────────────────────────────────
 
 /** Acepta coma o punto decimal. `null` si no es un número. */
@@ -147,7 +140,7 @@ export function targetLengthHint(state: PlannerState): string | null {
   if (km == null || targetLengthError(state.targetLengthKm)) return null;
   const straight = straightKm(state);
   if (km * (1 + TARGET_TOLERANCE) >= straight) return null;
-  return `En línea recta el destino ya está a ${fmtNum(straight, 0)} km: la ruta será más larga que lo pedido.`;
+  return `El destino está a ${fmtNum(straight, 0)} km en línea recta: la ruta será más larga.`;
 }
 
 // ── Geometría ────────────────────────────────────────────────

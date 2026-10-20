@@ -6,14 +6,10 @@ import {
   DETOUR_MAX,
   DETOUR_MIN,
   effectiveDetour,
-  fmtNum,
   parseKm,
   pointsProblem,
   PROFILE_WEIGHTS,
   surfaceLabel,
-  surfaceNote,
-  TARGET_KM_MAX,
-  TARGET_KM_MIN,
   TARGET_TOLERANCE,
   targetLengthError,
   targetLengthHint,
@@ -47,9 +43,9 @@ const MODES: SegmentedOption<Mode>[] = [
 ];
 
 const MODE_NOTES: Record<Mode, string> = {
-  directa: 'La ruta más agradable entre dos puntos, sin alargarla más de lo que permitas.',
-  circuito: 'Sale del punto de partida y vuelve a él, con el largo que elijas. No hay destino.',
-  'destino-largo': 'Llega al destino recorriendo aproximadamente el largo que elijas.',
+  directa: 'Entre dos puntos, por el camino más agradable.',
+  circuito: 'Sin destino: una vuelta del largo que elijas.',
+  'destino-largo': 'Hasta el destino, con el largo que elijas.',
 };
 
 const PROFILES: SegmentedOption<ProfileName>[] = [
@@ -106,11 +102,10 @@ export function Sidebar({
   const invalid = problem != null;
   const importing = importState?.kind === 'running';
 
-  const clickHint = circuit
-    ? 'Haz clic en el mapa para fijar el punto de partida.'
-    : nextClick === 'origin'
-      ? 'El próximo clic en el mapa fija el punto de partida.'
-      : 'El próximo clic en el mapa fija el destino.';
+  const clickHint =
+    circuit || nextClick === 'origin'
+      ? 'Un clic en el mapa fija la partida.'
+      : 'Un clic en el mapa fija el destino.';
 
   const actionLabel = busy ? 'Calculando…' : hasRoute ? 'Recalcular' : traceLabel(state.mode);
 
@@ -193,9 +188,7 @@ export function Sidebar({
             </RoundButton>
           )}
         </div>
-        <p style={{ ...text.aside, margin: '10px 0 0' }}>
-          {clickHint} También puedes arrastrar los marcadores.
-        </p>
+        <p style={{ ...text.aside, margin: '10px 0 0' }}>{clickHint}</p>
       </div>
 
       {/* — 03 largo o desvío — */}
@@ -223,11 +216,6 @@ export function Sidebar({
           onChange={pickProfile}
           columns={3}
         />
-        <p style={{ ...text.aside, margin: '12px 0 0' }}>
-          {state.custom
-            ? 'Ajustaste curvas o tipo de camino: la ruta usa tus valores.'
-            : 'Elige uno como base y afínalo con los controles de abajo.'}
-        </p>
       </div>
 
       {/* — 05 curvas — */}
@@ -253,9 +241,6 @@ export function Sidebar({
             />
           </div>
         </div>
-        <p style={{ ...text.aside, margin: '10px 0 0' }}>
-          Cuánto evitar los tramos rectos para buscar curvas.
-        </p>
       </div>
 
       {/* — 06 tipo de camino — */}
@@ -272,20 +257,17 @@ export function Sidebar({
           max={W_MAX}
           step={0.5}
           fillFrom={0}
-          labels={['Ripio y tierra', 'Indiferente', 'Pavimento']}
+          labels={['Ripio y tierra', 'Pavimento']}
           marks={5}
           ariaLabel="Preferencia de superficie"
         />
-        <p style={{ ...text.aside, margin: '10px 0 0' }}>
-          {surfaceNote(state.weights.surfaceWeight)}
-        </p>
       </div>
 
       {/* — 07 cartografía — */}
       <div style={sectionStyle}>
         <SectionHeader index={7} title="Cartografía" />
         <p style={{ ...text.aside, margin: '0 0 10px' }}>
-          El trazador sólo conoce las calles ya importadas.
+          Solo se puede trazar en zonas importadas.
         </p>
         <button
           type="button"
@@ -387,6 +369,10 @@ export function Sidebar({
 
 // ── Secciones ────────────────────────────────────────────────
 
+/** Desvío como recargo sobre la ruta más corta, igual que en la bitácora: ×1,5 → +50 %. */
+const fmtExtra = (ratio: number) =>
+  ratio <= DETOUR_MIN ? 'Ninguno' : `+${Math.round((ratio - 1) * 100)} %`;
+
 /** Hasta un decimal, sin ceros de relleno: 25,5 · 34,5 · 60. */
 const fmtLoose = (x: number) => x.toLocaleString('es', { maximumFractionDigits: 1 });
 
@@ -403,11 +389,8 @@ function LengthSection({
   onChange: (v: string) => void;
 }) {
   const [focus, setFocus] = useState(false);
-  const km = parseKm(value);
-  const band =
-    km != null && !error
-      ? `Se acepta entre ${fmtLoose(km * (1 - TARGET_TOLERANCE))} y ${fmtLoose(km * (1 + TARGET_TOLERANCE))} km (±${Math.round(TARGET_TOLERANCE * 100)} %).`
-      : null;
+  const km = parseKm(value) ?? 0;
+  const band = `Margen ±${Math.round(TARGET_TOLERANCE * 100)} %: de ${fmtLoose(km * (1 - TARGET_TOLERANCE))} a ${fmtLoose(km * (1 + TARGET_TOLERANCE))} km.`;
   return (
     <div style={sectionStyle}>
       <SectionHeader index={3} title="Largo" />
@@ -450,12 +433,10 @@ function LengthSection({
         style={{
           ...(error ? text.body : text.aside),
           margin: '10px 0 0',
-          color: error ? 'var(--terra)' : undefined,
+          color: error ? 'var(--terra)' : 'var(--ink-mute)',
         }}
       >
-        {error ??
-          band ??
-          `Entre ${TARGET_KM_MIN} y ${TARGET_KM_MAX} km, con una tolerancia de ±${Math.round(TARGET_TOLERANCE * 100)} %.`}
+        {error ?? band}
       </p>
       {hint && (
         <p style={{ ...text.body, margin: '6px 0 0', color: 'var(--amber)' }}>{hint}</p>
@@ -478,8 +459,7 @@ function ImportStatus({ state }: { state: ImportState }) {
   if (state.kind === 'running') {
     return (
       <p role="status" style={{ ...style, color: 'var(--ink-soft)' }}>
-        Descargando las calles de OpenStreetMap ({Math.floor(elapsed / 1000)} s). Suele tardar entre
-        medio minuto y un minuto y medio; si OpenStreetMap está saturado, varios minutos.
+        {Math.floor(elapsed / 1000)} s · suele tardar entre 30 y 90 s.
       </p>
     );
   }
@@ -504,24 +484,20 @@ function DetourSection({
   const isDefault = state.maxDetourRatio == null;
   return (
     <div style={sectionStyle}>
-      <SectionHeader index={3} title="Desvío máximo" value={`×${fmtNum(ratio)}`} />
+      <SectionHeader index={3} title="Desvío máximo" value={fmtExtra(ratio)} />
       <LabeledSlider
         value={ratio}
         onChange={(v) => set({ ...state, maxDetourRatio: v })}
         min={DETOUR_MIN}
         max={DETOUR_MAX}
         step={0.1}
-        labels={['Lo más corta', '×2', '×3']}
+        labels={['Ninguno', '+100 %', '+200 %']}
         marks={5}
         ariaLabel="Desvío máximo frente a la ruta más corta"
       />
       <p style={{ ...text.aside, margin: '10px 0 0' }}>
-        {ratio <= DETOUR_MIN
-          ? 'La ruta no puede ser más larga que la más corta posible.'
-          : `La ruta puede ser hasta un ${Math.round((ratio - 1) * 100)} % más larga que la más corta, para ganar curvas o el tipo de camino que prefieres.`}{' '}
-        {isDefault ? (
-          'Es el valor del perfil.'
-        ) : (
+        Cuánto más larga que la más corta puede ser.{' '}
+        {!isDefault && (
           <button
             type="button"
             onClick={() => set({ ...state, maxDetourRatio: null })}
@@ -534,7 +510,7 @@ function DetourSection({
               textDecoration: 'underline',
             }}
           >
-            Volver al del perfil (×{fmtNum(defaultDetour(state))})
+            Volver al del perfil ({fmtExtra(defaultDetour(state))})
           </button>
         )}
       </p>

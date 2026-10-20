@@ -48,8 +48,9 @@ anterior sigue a la vista con un aviso de que está desactualizada.
   hasta un punto de giro. La vista lo explica, distingue si está demostrado que no
   existe un circuito o si la búsqueda no lo encontró (`circuitImpossible`) y marca
   el punto de giro en el mapa.
-- En la ruta directa, el *desvío máximo* (×1,0 a ×3,0) limita cuánto más larga
-  que la más corta puede ser la ruta. Si no se toca, se usa el del perfil.
+- En la ruta directa, el *desvío máximo* limita cuánto más larga que la más corta
+  puede ser la ruta: de ninguno a +200 % (`maxDetourRatio` de 1 a 3). Si no se toca,
+  se usa el del perfil.
 
 ### Perfiles y pesos
 
@@ -59,14 +60,14 @@ Los tres perfiles base son los mismos del backend
 
 | Perfil | `curvinessWeight` | `surfaceWeight` | Desvío por defecto |
 |---|---|---|---|
-| Curvas (`moto-curvas`) | 3 | 0 | ×1,5 |
-| 4×4 (`4x4`) | 0 | −6 | ×2,0 |
-| Escénico (`scenic`) | 4 | 2 | ×1,5 |
+| Curvas (`moto-curvas`) | 3 | 0 | +50 % (×1,5) |
+| 4×4 (`4x4`) | 0 | −6 | +100 % (×2,0) |
+| Escénico (`scenic`) | 4 | 2 | +50 % (×1,5) |
 
 - Con un perfil activo la petición va como `profile: "moto-curvas"` (etc.) y el
   backend resuelve los pesos.
 - Mover *Curvas* o *Tipo de camino* **desactiva el perfil** y la petición pasa a
-  `profile: "custom"` con los dos pesos explícitos (desvío por defecto ×1,5).
+  `profile: "custom"` con los dos pesos explícitos (desvío por defecto +50 %).
 
 | Control | Campo de la API |
 |---|---|
@@ -83,7 +84,8 @@ Lo que el backend no expone se pide desde el navegador, aislado en
 - **Nominatim** (OSM): el backend rutea por `{lat, lon}` y no tiene geocodificador.
   Los campos de partida y destino y el buscador (Ctrl K / ⌘K) resuelven nombres de
   lugar a coordenadas. También aceptan `lat, lon` escrito a mano, el clic en el mapa
-  o arrastrar los marcadores.
+  o arrastrar los marcadores. Las coordenadas de cada punto se ven al pasar el cursor
+  sobre su campo.
 - **Teselas**: OSM, OpenTopoMap y Esri World Imagery para el selector de capas.
 
 La vista no usa datos de elevación: la pendiente está fuera del alcance del proyecto

@@ -74,6 +74,7 @@ export function WaypointField({
           type="text"
           value={query}
           placeholder={placeholder}
+          title={`${value.lat.toFixed(5)}, ${value.lon.toFixed(5)}`}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => {
             setFocus(true);
@@ -97,15 +98,7 @@ export function WaypointField({
             color: 'var(--ink)',
           }}
         />
-        <span
-          style={{
-            ...text.data,
-            color: 'var(--ink-mute)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {loading ? '···' : `${value.lat.toFixed(3)} ${value.lon.toFixed(3)}`}
-        </span>
+        {loading && <span style={{ ...text.data, color: 'var(--ink-mute)' }}>···</span>}
       </FieldShell>
 
       {showList && (
