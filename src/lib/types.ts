@@ -90,8 +90,6 @@ export interface RouteResult {
   targetLength?: TargetLengthInfo;
 }
 
-export interface Bbox { south: number; west: number; north: number; east: number }
-export interface ImportResult { nodes: number; edges: number; ways: number; deletedWays: number }
 
 // ── Planificador (estado de la UI) ───────────────────────────
 

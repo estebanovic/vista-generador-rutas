@@ -130,13 +130,6 @@ export const IconLandscape: IconComponent = (p) => (
   </Icon>
 );
 
-export const IconLayers: IconComponent = (p) => (
-  <Icon {...p}>
-    <path d="M12 3l9 5-9 5-9-5z" />
-    <path d="M3 13l9 5 9-5M3 17l9 5 9-5" />
-  </Icon>
-);
-
 export const IconDirect: IconComponent = (p) => (
   <Icon {...p}>
     <circle cx="5" cy="18" r="2" />

@@ -1,13 +1,14 @@
 /**
  * Raíz del planificador: estado de los controles, la ruta calculada y la
- * orquestación de las llamadas al backend (`POST /routes/calculate`, `POST /import`).
+ * orquestación de `POST /routes/calculate`. Las calles las carga el backend: la
+ * vista no importa zonas.
  */
 import { useCallback, useRef, useState } from 'react';
-import { calculateRoute, importBbox } from './api/client';
+import { calculateRoute } from './api/client';
 import { reverseGeocode } from './api/geocode';
 import { MapView, type MapLayer } from './components/MapView';
 import { ResultsPanel } from './components/ResultsPanel';
-import { Sidebar, type ImportState } from './components/Sidebar';
+import { Sidebar } from './components/Sidebar';
 import {
   EmptyHint,
   LayerSwitch,
@@ -16,7 +17,7 @@ import {
   type ComputeJob,
 } from './components/overlays';
 import { downloadGpx } from './lib/gpx';
-import { describeImportError, describeRouteError } from './lib/messages';
+import { describeRouteError } from './lib/messages';
 import {
   buildRouteView,
   parseKm,
@@ -26,7 +27,7 @@ import {
   toRequestBody,
   traceLabel,
 } from './lib/planner';
-import type { Bbox, PlannerState, RouteView, Waypoint } from './lib/types';
+import type { PlannerState, RouteView, Waypoint } from './lib/types';
 
 const DEFAULT_STATE: PlannerState = {
   origin: { name: 'Santiago Centro', lat: -33.4372, lon: -70.6506 },
@@ -58,11 +59,6 @@ export default function App() {
   const [layer, setLayer] = useState<MapLayer>('map');
   const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; nonce: number } | null>(null);
 
-  const [importState, setImportState] = useState<ImportState | null>(null);
-  const [importedBbox, setImportedBbox] = useState<Bbox | null>(null);
-  const [hasGraph, setHasGraph] = useState(true);
-
-  const getBoundsRef = useRef<(() => Bbox) | null>(null);
   /** Cálculo en curso; se aborta al cancelar o al vencer el plazo. */
   const abortRef = useRef<AbortController | null>(null);
   /** Alterna partida → destino en los clics sobre el mapa (en el circuito, siempre partida). */
@@ -91,23 +87,6 @@ export default function App() {
     setPoint(target, lat, lon);
   };
 
-  const onImport = async () => {
-    const bounds = getBoundsRef.current?.();
-    if (!bounds) return;
-    setImportState({ kind: 'running', startedAt: Date.now() });
-    try {
-      const res = await importBbox(bounds);
-      setImportState({
-        kind: 'done',
-        text: `Zona importada: ${res.ways.toLocaleString('es')} vías. Ya puedes trazar en ella.`,
-      });
-      setImportedBbox(bounds);
-      setHasGraph(true);
-    } catch (e) {
-      setImportState({ kind: 'error', text: describeImportError(e) });
-    }
-  };
-
   /** Calcula con los parámetros actuales. No se dispara solo: siempre lo pide el usuario. */
   const compute = async () => {
     if (problem) {
@@ -131,17 +110,12 @@ export default function App() {
       const result = await calculateRoute(body, ctrl.signal);
       if (abortRef.current !== ctrl) return;
       setRoute(buildRouteView(result, snapshot));
-      setHasGraph(true);
     } catch (e) {
       // Cancelado por el usuario (o reemplazado por otro cálculo): sin mensaje.
       if (abortRef.current !== ctrl || (ctrl.signal.aborted && !timedOut)) return;
-      const { message, noGraph } = describeRouteError(e, {
-        origin: body.origin,
-        destination: body.destination,
-        timedOut,
-      });
-      if (noGraph) setHasGraph(false);
-      setError(message);
+      setError(
+        describeRouteError(e, { origin: body.origin, destination: body.destination, timedOut }),
+      );
     } finally {
       clearTimeout(timer);
       if (abortRef.current === ctrl) {
@@ -169,8 +143,6 @@ export default function App() {
         error={error}
         onTrace={compute}
         nextClick={nextClick}
-        importState={importState}
-        onImport={onImport}
       />
 
       <main style={{ flex: 1, position: 'relative', minWidth: 0 }}>
@@ -180,12 +152,8 @@ export default function App() {
           destination={state.destination}
           showDestination={state.mode !== 'circuito'}
           layer={layer}
-          importedBbox={importedBbox}
           onMapClick={onMapClick}
           onMarkerDrag={setPoint}
-          onBoundsRef={(fn) => {
-            getBoundsRef.current = fn;
-          }}
           flyTo={flyTo}
         />
 
@@ -198,7 +166,7 @@ export default function App() {
           <ResultsPanel route={route} stale={stale} onExportGpx={() => downloadGpx(route)} />
         )}
 
-        {!route && !job && <EmptyHint hasGraph={hasGraph} action={traceLabel(state.mode)} />}
+        {!route && !job && <EmptyHint action={traceLabel(state.mode)} />}
       </main>
 
       {/* Grano de película sobre toda la app. */}

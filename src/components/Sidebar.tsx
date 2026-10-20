@@ -1,5 +1,5 @@
-/** Panel izquierdo: modalidad, puntos, largo o desvío, perfil, importación y cálculo. */
-import { useEffect, useState } from 'react';
+/** Panel izquierdo: modalidad, puntos, largo o desvío, perfil y cálculo. */
+import { useState } from 'react';
 import {
   curvesLabel,
   defaultDetour,
@@ -25,7 +25,6 @@ import {
   IconDirect,
   IconFlag,
   IconLandscape,
-  IconLayers,
   IconLoop,
   IconMoto,
   IconPin,
@@ -54,11 +53,6 @@ const PROFILES: SegmentedOption<ProfileName>[] = [
   { value: 'scenic', label: 'Escénico', sub: 'CURVAS PAVIMENTADAS', icon: IconLandscape },
 ];
 
-/** Importación en curso o su resultado. */
-export type ImportState =
-  | { kind: 'running'; startedAt: number }
-  | { kind: 'done' | 'error'; text: string };
-
 export interface SidebarProps {
   state: PlannerState;
   set: (next: PlannerState) => void;
@@ -71,8 +65,6 @@ export interface SidebarProps {
   onTrace: () => void;
   /** Qué punto fija el próximo clic en el mapa. */
   nextClick: 'origin' | 'destination';
-  importState: ImportState | null;
-  onImport: () => void;
 }
 
 export function Sidebar({
@@ -84,8 +76,6 @@ export function Sidebar({
   error,
   onTrace,
   nextClick,
-  importState,
-  onImport,
 }: SidebarProps) {
   /** Cargar un perfil base reemplaza los dos pesos y vuelve a activarlo. */
   const pickProfile = (p: ProfileName) =>
@@ -100,7 +90,6 @@ export function Sidebar({
   const lengthError = withLength ? targetLengthError(state.targetLengthKm) : null;
   const pointIssue = pointsProblem(state);
   const invalid = problem != null;
-  const importing = importState?.kind === 'running';
 
   const clickHint =
     circuit || nextClick === 'origin'
@@ -263,43 +252,6 @@ export function Sidebar({
         />
       </div>
 
-      {/* — 07 cartografía — */}
-      <div style={sectionStyle}>
-        <SectionHeader index={7} title="Cartografía" />
-        <p style={{ ...text.aside, margin: '0 0 10px' }}>
-          Solo se puede trazar en zonas importadas.
-        </p>
-        <button
-          type="button"
-          onClick={onImport}
-          disabled={importing}
-          style={{
-            ...text.bodySm,
-            width: '100%',
-            padding: '9px 12px',
-            background: 'transparent',
-            border: '1px solid var(--rule)',
-            borderRadius: 2,
-            color: 'var(--ink-soft)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            opacity: importing ? 0.6 : 1,
-            cursor: importing ? 'wait' : 'pointer',
-          }}
-        >
-          <IconLayers size={13} />
-          {importing ? 'Importando calles…' : 'Importar área visible'}
-        </button>
-        {importState && (
-          <ImportStatus
-            key={importState.kind === 'running' ? importState.startedAt : importState.kind}
-            state={importState}
-          />
-        )}
-      </div>
-
       {/* — acción — */}
       <div
         style={{
@@ -442,34 +394,6 @@ function LengthSection({
         <p style={{ ...text.body, margin: '6px 0 0', color: 'var(--amber)' }}>{hint}</p>
       )}
     </div>
-  );
-}
-
-/** Progreso o resultado de la importación. Tarda de medio minuto a varios minutos. */
-function ImportStatus({ state }: { state: ImportState }) {
-  const [elapsed, setElapsed] = useState(0);
-  const startedAt = state.kind === 'running' ? state.startedAt : null;
-  useEffect(() => {
-    if (startedAt == null) return;
-    const id = setInterval(() => setElapsed(Date.now() - startedAt), 1000);
-    return () => clearInterval(id);
-  }, [startedAt]);
-
-  const style = { ...text.body, margin: '8px 0 0' };
-  if (state.kind === 'running') {
-    return (
-      <p role="status" style={{ ...style, color: 'var(--ink-soft)' }}>
-        {Math.floor(elapsed / 1000)} s · suele tardar entre 30 y 90 s.
-      </p>
-    );
-  }
-  return (
-    <p
-      role={state.kind === 'error' ? 'alert' : 'status'}
-      style={{ ...style, color: state.kind === 'error' ? 'var(--terra)' : 'var(--ink-soft)' }}
-    >
-      {state.text}
-    </p>
   );
 }
 

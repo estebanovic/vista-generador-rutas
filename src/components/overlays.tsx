@@ -301,7 +301,7 @@ export function LoadingOverlay({ job, onCancel }: { job: ComputeJob; onCancel: (
   );
 }
 
-export function EmptyHint({ hasGraph, action }: { hasGraph: boolean; action: string }) {
+export function EmptyHint({ action }: { action: string }) {
   return (
     <div
       style={{
@@ -321,19 +321,8 @@ export function EmptyHint({ hasGraph, action }: { hasGraph: boolean; action: str
         textAlign: 'center',
       }}
     >
-      {hasGraph ? (
-        <>
-          Configura los parámetros y pulsa{' '}
-          <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{action}</strong> para
-          comenzar.
-        </>
-      ) : (
-        <>
-          Encuadra una zona e{' '}
-          <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>impórtala</strong> antes de
-          trazar: el grafo sólo conoce las calles descargadas.
-        </>
-      )}
+      Configura los parámetros y pulsa{' '}
+      <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{action}</strong> para comenzar.
     </div>
   );
 }

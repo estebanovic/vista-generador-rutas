@@ -1,10 +1,5 @@
 /** Cliente del backend NestJS (generador-rutas_2). */
-import type {
-  Bbox,
-  CalculateRouteBody,
-  ImportResult,
-  RouteResult,
-} from '../lib/types';
+import type { CalculateRouteBody, RouteResult } from '../lib/types';
 
 export const API_URL: string =
   import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -58,12 +53,4 @@ export function calculateRoute(
   signal?: AbortSignal,
 ): Promise<RouteResult> {
   return post<RouteResult>('/routes/calculate', body, signal);
-}
-
-/**
- * Descarga las calles de un bbox de OSM y recompila el grafo. Lento: de medio
- * minuto a minuto y medio, y varios minutos si Overpass falla.
- */
-export function importBbox(bbox: Bbox, signal?: AbortSignal): Promise<ImportResult> {
-  return post<ImportResult>('/import', bbox, signal);
 }

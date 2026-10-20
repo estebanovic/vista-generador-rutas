@@ -18,17 +18,15 @@ cp .env.example .env    # VITE_API_URL apunta al backend (default http://localho
 npm run dev
 ```
 
-El backend debe estar corriendo (`npm run start:dev` en `generador-rutas_2`) y con
-MongoDB disponible. **Antes de trazar hay que importar una zona**: encuadra un área
-en el mapa y pulsa *Importar área visible* (sección 07 · Cartografía). El trazador
-sólo conoce las calles descargadas, y la importación tarda de medio minuto a minuto
-y medio (varios minutos si OpenStreetMap está saturado).
+El backend debe estar corriendo (`npm run start:dev` en `generador-rutas_2`), con
+MongoDB disponible y **las calles ya cargadas**. La vista no importa zonas: eso se
+hace en el backend (`POST /import` o su CLI). Si un punto cae fuera de la zona
+cargada, la vista lo avisa al trazar.
 
 ## Cómo se conecta con el backend
 
 | UI | Backend |
 |---|---|
-| Botón *Importar área visible* | `POST /import` con el bbox visible del mapa |
 | Botón *Trazar la ruta* / *Buscar circuito* / *Recalcular* | `POST /routes/calculate` |
 
 El cálculo nunca se dispara solo: siempre lo pide el usuario, y los puntos y
@@ -136,7 +134,7 @@ src/
   lib/         types, planner (perfiles, petición, repartos), messages, gpx, theme
   components/  Sidebar, MapView, ResultsPanel (bitácora), overlays, WaypointField,
                primitives, icons, styles
-  App.tsx      estado, cálculo (con cancelación y plazo) e importación
+  App.tsx      estado y cálculo (con cancelación y plazo)
 ```
 
 ## Tema y tipografía

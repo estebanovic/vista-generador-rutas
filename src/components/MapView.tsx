@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { isLoop } from '../lib/planner';
-import type { Bbox, RouteView, Waypoint } from '../lib/types';
+import type { RouteView, Waypoint } from '../lib/types';
 import { token } from '../lib/theme';
 import { IconLocate, IconMinus, IconPlus } from './icons';
 import { FONT, SIZE, text } from './styles';
@@ -79,10 +79,8 @@ export interface MapViewProps {
   /** En el circuito no hay destino: un solo marcador. */
   showDestination: boolean;
   layer: MapLayer;
-  importedBbox: Bbox | null;
   onMapClick: (lat: number, lon: number) => void;
   onMarkerDrag: (target: 'origin' | 'destination', lat: number, lon: number) => void;
-  onBoundsRef: (getBounds: () => Bbox) => void;
   flyTo: { lat: number; lon: number; nonce: number } | null;
 }
 
@@ -92,10 +90,8 @@ export function MapView({
   destination,
   showDestination,
   layer,
-  importedBbox,
   onMapClick,
   onMarkerDrag,
-  onBoundsRef,
   flyTo,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -103,7 +99,6 @@ export function MapView({
   const tileRef = useRef<L.TileLayer | null>(null);
   const routeRef = useRef<L.LayerGroup | null>(null);
   const endpointsRef = useRef<L.LayerGroup | null>(null);
-  const bboxRef = useRef<L.Rectangle | null>(null);
   // El handler de click se guarda en un ref: el listener de Leaflet se registra
   // una sola vez y no debe capturar una versión vieja del callback.
   const clickRef = useRef(onMapClick);
@@ -143,10 +138,6 @@ export function MapView({
     updateScale();
 
     mapRef.current = m;
-    onBoundsRef(() => {
-      const b = m.getBounds();
-      return { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() };
-    });
     // Sólo al montar: el mapa es imperativo y sobrevive a los re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -260,22 +251,6 @@ export function MapView({
     routeRef.current = L.layerGroup(layers).addTo(m);
     fitVisible(m, L.polyline(pts).getBounds());
   }, [route]);
-
-  // ── rectángulo de la zona importada ──
-  useEffect(() => {
-    const m = mapRef.current;
-    if (!m) return;
-    bboxRef.current?.remove();
-    bboxRef.current = null;
-    if (!importedBbox) return;
-    bboxRef.current = L.rectangle(
-      [
-        [importedBbox.south, importedBbox.west],
-        [importedBbox.north, importedBbox.east],
-      ],
-      { color: token('--ink-mute'), weight: 1, dashArray: '5 5', fill: false, interactive: false },
-    ).addTo(m);
-  }, [importedBbox]);
 
   // ── vuelo desde el buscador ──
   useEffect(() => {
